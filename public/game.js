@@ -1940,6 +1940,12 @@ document.getElementById("btn-quick").addEventListener("click", () => {
     socket.emit("quick_match");
 });
 
+document.getElementById("btn-solo").addEventListener("click", () => {
+    SFX.click();
+    connectSocket();
+    socket.emit("start_solo");
+});
+
 document.getElementById("btn-cancel").addEventListener("click", () => {
     SFX.click();
     if (socket) {

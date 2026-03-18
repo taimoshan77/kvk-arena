@@ -69,6 +69,19 @@ const CFG = {
 };
 
 // ============================================
+// BOT SOCKET STUB
+// ============================================
+function createBotSocket() {
+    return {
+        emit() {},
+        connected: true,
+        _room: null,
+        _playerIndex: -1,
+        isBot: true,
+    };
+}
+
+// ============================================
 // ROOMS & MATCHMAKING
 // ============================================
 const rooms = new Map();
@@ -303,6 +316,169 @@ function endMatch(room, winner) {
 }
 
 // ============================================
+// BOT AI
+// ============================================
+function tickBotAI(room) {
+    const bot = room.players[1];
+    const opponent = room.players[0];
+    if (!bot || !bot.alive || !opponent) return;
+
+    const ball = room.ball;
+    const now = Date.now();
+
+    // Target position for movement
+    let targetX, targetY;
+
+    if (bot.hasBall) {
+        // Move toward enemy goal (left side, x=0) with some y variation toward goal center
+        const goalCenter = CFG.ARENA_H / 2;
+        targetX = 80;
+        targetY = goalCenter + (Math.sin(now / 800) * 40); // weave slightly
+
+        // Kick toward goal when close enough or well-aligned
+        const distToGoal = bot.x - 0;
+        if (distToGoal < 250) {
+            // Kick toward goal center
+            const goalY = goalCenter + (Math.random() - 0.5) * CFG.GOAL_WIDTH * 0.6;
+            const angle = Math.atan2(goalY - bot.y, 0 - bot.x);
+            ball.vx = Math.cos(angle) * CFG.BALL_KICK_SPEED;
+            ball.vy = Math.sin(angle) * CFG.BALL_KICK_SPEED;
+            ball.carrier = -1;
+            ball.lastKicker = bot.index;
+            ball.lastKickTime = now;
+            bot.hasBall = false;
+            for (const pl of room.players) {
+                if (pl) pl.socket.emit("ball_kicked", { player: bot.index, angle });
+            }
+            return;
+        }
+
+        // Super kick if very aligned with goal
+        if (distToGoal < 400 && Math.abs(bot.y - goalCenter) < CFG.GOAL_WIDTH * 0.4) {
+            if (Math.random() < 0.02) { // occasional super kick
+                const angle = Math.atan2(goalCenter - bot.y, 0 - bot.x);
+                ball.vx = Math.cos(angle) * CFG.BALL_SUPER_KICK_SPEED;
+                ball.vy = Math.sin(angle) * CFG.BALL_SUPER_KICK_SPEED;
+                ball.carrier = -1;
+                ball.lastKicker = bot.index;
+                ball.lastKickTime = now;
+                bot.hasBall = false;
+                for (const pl of room.players) {
+                    if (pl) pl.socket.emit("ball_super_kicked", { player: bot.index, angle });
+                }
+                return;
+            }
+        }
+    } else if (ball.carrier === -1) {
+        // Ball is free — go pick it up
+        targetX = ball.x;
+        targetY = ball.y;
+    } else {
+        // Opponent has ball — pressure them
+        targetX = opponent.x;
+        targetY = opponent.y;
+
+        // Dash tackle if close and off cooldown
+        const dx = opponent.x - bot.x;
+        const dy = opponent.y - bot.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < CFG.DASH_DISTANCE + CFG.TACKLE_RADIUS && dist > 0 && now - bot.lastDashTime >= CFG.DASH_COOLDOWN) {
+            bot.lastDashTime = now;
+            const nx = dx / dist;
+            const ny = dy / dist;
+            // Set velocity toward opponent for the dash
+            bot.vx = nx * CFG.PLAYER_SPEED;
+            bot.vy = ny * CFG.PLAYER_SPEED;
+            const startX = bot.x;
+            const startY = bot.y;
+            bot.x += nx * CFG.DASH_DISTANCE;
+            bot.y += ny * CFG.DASH_DISTANCE;
+            bot.x = clamp(bot.x, CFG.PLAYER_RADIUS, CFG.ARENA_W - CFG.PLAYER_RADIUS);
+            bot.y = clamp(bot.y, CFG.PLAYER_RADIUS, CFG.ARENA_H - CFG.PLAYER_RADIUS);
+
+            for (const pl of room.players) {
+                if (pl) pl.socket.emit("player_dash", { player: bot.index, x: bot.x, y: bot.y });
+            }
+
+            // Check tackle
+            if (ball.carrier === opponent.index) {
+                const segDx = bot.x - startX;
+                const segDy = bot.y - startY;
+                const segLen2 = segDx * segDx + segDy * segDy;
+                if (segLen2 > 0) {
+                    const t = clamp(((opponent.x - startX) * segDx + (opponent.y - startY) * segDy) / segLen2, 0, 1);
+                    const closestX = startX + t * segDx;
+                    const closestY = startY + t * segDy;
+                    const distX = opponent.x - closestX;
+                    const distY = opponent.y - closestY;
+                    const dist2 = distX * distX + distY * distY;
+                    if (dist2 < CFG.TACKLE_RADIUS * CFG.TACKLE_RADIUS) {
+                        const knockAngle = Math.atan2(ny, nx);
+                        const knockSpeed = CFG.BALL_KICK_SPEED * 0.6;
+                        ball.vx = Math.cos(knockAngle) * knockSpeed;
+                        ball.vy = Math.sin(knockAngle) * knockSpeed;
+                        ball.carrier = -1;
+                        ball.lastKicker = opponent.index;
+                        ball.lastKickTime = now;
+                        ball.x = opponent.x + Math.cos(knockAngle) * 40;
+                        ball.y = opponent.y + Math.sin(knockAngle) * 40;
+                        ball.x = clamp(ball.x, CFG.BALL_RADIUS, CFG.ARENA_W - CFG.BALL_RADIUS);
+                        ball.y = clamp(ball.y, CFG.BALL_RADIUS, CFG.ARENA_H - CFG.BALL_RADIUS);
+                        opponent.hasBall = false;
+                        for (const pl of room.players) {
+                            if (pl) pl.socket.emit("ball_tackled", { tackler: bot.index, from: opponent.index });
+                        }
+                    }
+                }
+            }
+            return;
+        }
+    }
+
+    // Move toward target
+    if (targetX !== undefined) {
+        const dx = targetX - bot.x;
+        const dy = targetY - bot.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 5) {
+            bot.vx = (dx / dist) * CFG.PLAYER_SPEED;
+            bot.vy = (dy / dist) * CFG.PLAYER_SPEED;
+        } else {
+            bot.vx = 0;
+            bot.vy = 0;
+        }
+    }
+
+    // Shoot at opponent periodically (when not carrying ball)
+    if (!bot.hasBall && opponent.alive && now - bot.lastFireTime >= CFG.FIRE_COOLDOWN) {
+        const dx = opponent.x - bot.x;
+        const dy = opponent.y - bot.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 350) {
+            bot.lastFireTime = now;
+            const angle = Math.atan2(dy, dx);
+            let bulletSpeed = CFG.BULLET_SPEED;
+            let bulletDamage = CFG.BULLET_DAMAGE;
+            let piercing = false;
+            let bomb = false;
+            if (bot.weapon === "fast") bulletSpeed = CFG.BULLET_SPEED * 2;
+            else if (bot.weapon === "laser") { piercing = true; bulletDamage = 30; }
+            else if (bot.weapon === "bomb") { bomb = true; bulletDamage = 0; }
+            room.bullets.push({
+                id: room.nextBulletId++,
+                x: bot.x, y: bot.y,
+                vx: Math.cos(angle) * bulletSpeed,
+                vy: Math.sin(angle) * bulletSpeed,
+                owner: bot.index,
+                damage: bulletDamage,
+                piercing, bomb,
+                weaponType: bot.weapon || null,
+            });
+        }
+    }
+}
+
+// ============================================
 // SERVER TICK
 // ============================================
 function tickRoom(room) {
@@ -329,6 +505,11 @@ function tickRoom(room) {
             endMatch(room);
             return;
         }
+    }
+
+    // --- Bot AI ---
+    if (room.isBot) {
+        tickBotAI(room);
     }
 
     // --- Respawn timers ---
@@ -799,6 +980,12 @@ io.on("connection", (socket) => {
         }
     });
 
+    socket.on("start_solo", () => {
+        const botSocket = createBotSocket();
+        const room = createRoom(socket, botSocket);
+        room.isBot = true;
+    });
+
     socket.on("cancel_queue", () => {
         const idx = matchQueue.indexOf(socket);
         if (idx !== -1) matchQueue.splice(idx, 1);
@@ -974,6 +1161,11 @@ io.on("connection", (socket) => {
         if (!room || room.state !== "done") return;
         const p = room.players[socket._playerIndex];
         p._wantsRestart = true;
+
+        // In bot mode, auto-accept for bot
+        if (room.isBot) {
+            room.players[1]._wantsRestart = true;
+        }
 
         // Check if both want restart
         if (room.players[0]._wantsRestart && room.players[1]._wantsRestart) {
