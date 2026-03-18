@@ -113,151 +113,34 @@ const SFX = {
 };
 
 // ============================================
-// MUSIC — Brawl Stars-style procedural BGM
+// MUSIC — Audio file BGM (CC0 "Urban Boss Battle")
 // ============================================
 const Music = {
-    ctx: null,
+    audio: null,
     playing: false,
-    nodes: [],
-    tempo: 130,       // BPM
-    bar: 0,
-    beat: 0,
-    timerID: null,
 
     start() {
         if (this.playing) return;
-        this.ctx = SFX._ensureCtx();
-        if (!this.ctx) return;
+        SFX._ensureCtx();
+        if (!this.audio) {
+            this.audio = new Audio();
+            // Try OGG first, fallback to MP3
+            const canOgg = this.audio.canPlayType("audio/ogg; codecs=vorbis");
+            this.audio.src = canOgg ? "/assets/bgm.ogg" : "/assets/bgm.mp3";
+            this.audio.loop = true;
+            this.audio.volume = 0.25;
+        }
+        this.audio.currentTime = 0;
+        this.audio.play().catch(() => {});
         this.playing = true;
-        this.bar = 0;
-        this.beat = 0;
-        const beatMs = 60000 / this.tempo;
-        this.timerID = setInterval(() => this._tick(), beatMs);
-        this._tick(); // start immediately
     },
 
     stop() {
+        if (this.audio) {
+            this.audio.pause();
+            this.audio.currentTime = 0;
+        }
         this.playing = false;
-        if (this.timerID) { clearInterval(this.timerID); this.timerID = null; }
-        // Fade out any lingering nodes
-        this.nodes.forEach(n => { try { n.stop(); } catch(e){} });
-        this.nodes = [];
-    },
-
-    _tick() {
-        if (!this.playing || !this.ctx) return;
-        const c = this.ctx;
-        const t = c.currentTime;
-        const beatDur = 60 / this.tempo;
-
-        // Bass line — simple repeating pattern (sine)
-        const bassNotes = [
-            [130.81, 130.81, 146.83, 146.83, 164.81, 164.81, 146.83, 146.83], // C3 D3 E3 D3
-            [174.61, 174.61, 164.81, 164.81, 146.83, 146.83, 130.81, 130.81], // F3 E3 D3 C3
-            [130.81, 130.81, 164.81, 164.81, 196.00, 196.00, 164.81, 164.81], // C3 E3 G3 E3
-            [174.61, 174.61, 196.00, 196.00, 164.81, 164.81, 130.81, 130.81], // F3 G3 E3 C3
-        ];
-        const bassSeq = bassNotes[this.bar % 4];
-        const bassFreq = bassSeq[this.beat % 8];
-        this._playNote("sine", bassFreq, beatDur * 0.8, 0.07, t);
-
-        // Melody — pentatonic arpeggios (square, filtered)
-        const melodyPatterns = [
-            [523, 0, 659, 0, 784, 0, 659, 0],
-            [784, 0, 1047, 0, 784, 0, 659, 0],
-            [523, 659, 0, 784, 0, 1047, 0, 784],
-            [1047, 0, 784, 659, 0, 523, 659, 0],
-        ];
-        const melFreq = melodyPatterns[this.bar % 4][this.beat % 8];
-        if (melFreq > 0) {
-            this._playNote("square", melFreq, beatDur * 0.5, 0.04, t, 2000);
-        }
-
-        // Percussion — kick on beats 0,4; snare on 2,6
-        if (this.beat % 4 === 0) {
-            // Kick
-            this._playNote("sine", 150, 0.1, 0.08, t);
-            const kickO = c.createOscillator();
-            const kickG = c.createGain();
-            kickO.type = "sine";
-            kickO.frequency.setValueAtTime(150, t);
-            kickO.frequency.exponentialRampToValueAtTime(30, t + 0.08);
-            kickG.gain.setValueAtTime(0.08, t);
-            kickG.gain.linearRampToValueAtTime(0, t + 0.1);
-            kickO.connect(kickG).connect(c.destination);
-            kickO.start(t); kickO.stop(t + 0.1);
-            this.nodes.push(kickO);
-        }
-        if (this.beat % 4 === 2) {
-            // Snare (noise burst)
-            this._playNoise(0.07, 0.05, 4000, t);
-        }
-
-        // Hi-hat on every beat
-        this._playNoise(0.03, 0.02, 8000, t);
-
-        // Chord pad — sustained on beat 0 of each bar
-        if (this.beat === 0) {
-            const chords = [
-                [261.63, 329.63, 392.00], // C maj
-                [349.23, 440.00, 523.25], // F maj
-                [392.00, 493.88, 587.33], // G maj
-                [349.23, 440.00, 523.25], // F maj
-            ];
-            const chord = chords[this.bar % 4];
-            chord.forEach(freq => {
-                this._playNote("triangle", freq, beatDur * 7.5, 0.025, t);
-            });
-        }
-
-        // Advance
-        this.beat++;
-        if (this.beat >= 8) {
-            this.beat = 0;
-            this.bar++;
-        }
-    },
-
-    _playNote(type, freq, dur, vol, startTime, filterFreq) {
-        const c = this.ctx;
-        const o = c.createOscillator();
-        const g = c.createGain();
-        o.type = type;
-        o.frequency.setValueAtTime(freq, startTime);
-        g.gain.setValueAtTime(vol, startTime);
-        g.gain.linearRampToValueAtTime(0, startTime + dur);
-        if (filterFreq) {
-            const f = c.createBiquadFilter();
-            f.type = "lowpass"; f.frequency.value = filterFreq;
-            o.connect(f).connect(g).connect(c.destination);
-        } else {
-            o.connect(g).connect(c.destination);
-        }
-        o.start(startTime); o.stop(startTime + dur);
-        this.nodes.push(o);
-        // Cleanup old refs
-        if (this.nodes.length > 100) this.nodes.splice(0, 50);
-    },
-
-    _playNoise(dur, vol, filterFreq, startTime) {
-        const c = this.ctx;
-        const len = c.sampleRate * dur;
-        const buf = c.createBuffer(1, len, c.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-        const src = c.createBufferSource();
-        src.buffer = buf;
-        const g = c.createGain();
-        g.gain.setValueAtTime(vol, startTime);
-        g.gain.linearRampToValueAtTime(0, startTime + dur);
-        if (filterFreq) {
-            const f = c.createBiquadFilter();
-            f.type = "lowpass"; f.frequency.value = filterFreq;
-            src.connect(f).connect(g).connect(c.destination);
-        } else {
-            src.connect(g).connect(c.destination);
-        }
-        src.start(startTime); src.stop(startTime + dur);
     },
 };
 
@@ -300,9 +183,15 @@ let currState = null;
 let stateTime = 0;
 const INTERP_DELAY = 50; // ms
 
-// Sprites
-const sprites = { k1: null, k2: null };
+// Sprites (directional: front, back, left, right)
+const sprites = {
+    k1: null, k2: null, // legacy (title screen)
+    k1_front: null, k1_back: null, k1_left: null, k1_right: null,
+    k2_front: null, k2_back: null, k2_left: null, k2_right: null,
+};
 let spritesLoaded = 0;
+// Track each player's facing direction
+let playerDir = ["front", "front"];
 
 // Particles
 const particlePool = [];
@@ -393,14 +282,20 @@ function showError(msg) {
 // SPRITES
 // ============================================
 function loadSprites() {
-    const names = ["k1", "k2"];
-    names.forEach(name => {
+    // Title screen sprites
+    ["k1", "k2"].forEach(name => {
         const img = new Image();
-        img.onload = () => {
-            sprites[name] = img;
-            spritesLoaded++;
-        };
+        img.onload = () => { sprites[name] = img; spritesLoaded++; };
         img.src = `/assets/${name}.png`;
+    });
+    // Directional 3D sprites
+    const dirs = ["front", "back", "left", "right"];
+    ["k1", "k2"].forEach(name => {
+        dirs.forEach(dir => {
+            const img = new Image();
+            img.onload = () => { sprites[`${name}_${dir}`] = img; };
+            img.src = `/assets/${name}-${dir}.png`;
+        });
     });
 }
 
@@ -409,13 +304,29 @@ function loadSprites() {
 // ============================================
 function generateDecorations() {
     arenaDecorations = [];
-    // Scatter bushes and rocks
-    for (let i = 0; i < 12; i++) {
+    // Bushes in clusters (corners and edges, away from center)
+    for (let i = 0; i < 8; i++) {
+        const margin = 60;
+        let x, y;
+        // Place near edges, avoid center area
+        do {
+            x = margin + Math.random() * (CFG.ARENA_W - margin * 2);
+            y = margin + Math.random() * (CFG.ARENA_H - margin * 2);
+        } while (Math.abs(x - CFG.ARENA_W / 2) < 120 && Math.abs(y - CFG.ARENA_H / 2) < 100);
         arenaDecorations.push({
-            type: Math.random() > 0.5 ? "bush" : "rock",
-            x: 40 + Math.random() * (CFG.ARENA_W - 80),
-            y: 40 + Math.random() * (CFG.ARENA_H - 80),
-            size: 8 + Math.random() * 12,
+            type: "bush",
+            x, y,
+            size: 10 + Math.random() * 14,
+            shade: Math.random() * 0.3,
+        });
+    }
+    // Crates (scattered)
+    for (let i = 0; i < 6; i++) {
+        arenaDecorations.push({
+            type: "crate",
+            x: 50 + Math.random() * (CFG.ARENA_W - 100),
+            y: 50 + Math.random() * (CFG.ARENA_H - 100),
+            size: 8 + Math.random() * 8,
             shade: Math.random() * 0.3,
         });
     }
@@ -914,8 +825,13 @@ function sendInput() {
 // RENDERING — Arena (Brawl Stars grass style)
 // ============================================
 function drawArena() {
-    // Dark background outside arena
-    ctx.fillStyle = "#1a0a2e";
+    const t = Date.now() / 1000;
+
+    // Colorful background outside arena (Brawl Stars blue/purple)
+    const outerGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+    outerGrad.addColorStop(0, "#2a1850");
+    outerGrad.addColorStop(1, "#0a0820");
+    ctx.fillStyle = outerGrad;
     ctx.fillRect(0, 0, W, H);
 
     const tl = arenaToScreen(0, 0);
@@ -923,84 +839,126 @@ function drawArena() {
     const aw = br.x - tl.x;
     const ah = br.y - tl.y;
 
-    // Green grass floor
-    const grassGrad = ctx.createLinearGradient(tl.x, tl.y, tl.x, br.y);
-    grassGrad.addColorStop(0, "#4a8c3f");
-    grassGrad.addColorStop(0.5, "#3d7a34");
-    grassGrad.addColorStop(1, "#4a8c3f");
+    // Sandy/grass floor — Brawl Stars warm palette
+    const grassGrad = ctx.createLinearGradient(tl.x, tl.y, br.x, br.y);
+    grassGrad.addColorStop(0, "#5a9944");
+    grassGrad.addColorStop(0.3, "#4a8838");
+    grassGrad.addColorStop(0.5, "#d4a853"); // sandy center path
+    grassGrad.addColorStop(0.7, "#4a8838");
+    grassGrad.addColorStop(1, "#5a9944");
     ctx.fillStyle = grassGrad;
     ctx.fillRect(tl.x, tl.y, aw, ah);
 
-    // Subtle grass tile pattern
-    ctx.globalAlpha = 0.08;
+    // Checkerboard grass tiles (alternating greens)
+    ctx.globalAlpha = 0.1;
     const tileSize = 40 * scaleX;
     for (let gx = 0; gx < CFG.ARENA_W; gx += 40) {
         for (let gy = 0; gy < CFG.ARENA_H; gy += 40) {
             const sp = arenaToScreen(gx, gy);
             if ((Math.floor(gx / 40) + Math.floor(gy / 40)) % 2 === 0) {
-                ctx.fillStyle = "#5a9c4f";
+                ctx.fillStyle = "#6aac54";
                 ctx.fillRect(sp.x, sp.y, tileSize, tileSize);
             }
         }
     }
     ctx.globalAlpha = 1;
 
-    // Decorations (bushes & rocks)
+    // Center diamond decoration (like Brawl Stars maps)
+    const cx = tl.x + aw / 2;
+    const cy = tl.y + ah / 2;
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = "#ffd700";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 80 * scaleY);
+    ctx.lineTo(cx + 80 * scaleX, cy);
+    ctx.lineTo(cx, cy + 80 * scaleY);
+    ctx.lineTo(cx - 80 * scaleX, cy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Decorations (bushes, rocks, flowers, crates)
     for (const d of arenaDecorations) {
         const sp = arenaToScreen(d.x, d.y);
         const sz = d.size * scaleX;
         if (d.type === "bush") {
-            ctx.fillStyle = `rgba(34, ${100 + d.shade * 60}, 28, 0.5)`;
+            // Multi-layered bush
+            ctx.fillStyle = "#2d6b1e";
             ctx.beginPath();
-            ctx.arc(sp.x, sp.y, sz, 0, Math.PI * 2);
+            ctx.arc(sp.x, sp.y + sz * 0.15, sz, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = `rgba(50, ${130 + d.shade * 50}, 40, 0.4)`;
+            ctx.fillStyle = "#3d8828";
             ctx.beginPath();
-            ctx.arc(sp.x - sz * 0.3, sp.y - sz * 0.3, sz * 0.6, 0, Math.PI * 2);
+            ctx.arc(sp.x, sp.y, sz * 0.85, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "#4da838";
+            ctx.beginPath();
+            ctx.arc(sp.x - sz * 0.2, sp.y - sz * 0.25, sz * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            // Highlight dot
+            ctx.fillStyle = "rgba(255,255,255,0.15)";
+            ctx.beginPath();
+            ctx.arc(sp.x - sz * 0.25, sp.y - sz * 0.35, sz * 0.2, 0, Math.PI * 2);
             ctx.fill();
         } else {
-            ctx.fillStyle = `rgba(120, 110, 100, ${0.3 + d.shade * 0.2})`;
+            // Crate/rock with Brawl Stars style
+            const hw = sz * 0.6;
+            ctx.fillStyle = "#8b6f47";
+            ctx.fillRect(sp.x - hw, sp.y - hw, hw * 2, hw * 2);
+            ctx.fillStyle = "#a0824e";
+            ctx.fillRect(sp.x - hw + 2, sp.y - hw + 2, hw * 2 - 4, hw - 2);
+            // X on crate
+            ctx.strokeStyle = "#6b5230";
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(sp.x, sp.y, sz * 0.7, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = `rgba(140, 130, 120, ${0.2 + d.shade * 0.1})`;
-            ctx.beginPath();
-            ctx.arc(sp.x - sz * 0.15, sp.y - sz * 0.2, sz * 0.45, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.moveTo(sp.x - hw + 3, sp.y - hw + 3);
+            ctx.lineTo(sp.x + hw - 3, sp.y + hw - 3);
+            ctx.moveTo(sp.x + hw - 3, sp.y - hw + 3);
+            ctx.lineTo(sp.x - hw + 3, sp.y + hw - 3);
+            ctx.stroke();
         }
     }
 
-    // 3D beveled wall border
-    const wallW = 6 * scaleX;
-    // Outer dark edge
-    ctx.fillStyle = "#2a5420";
-    ctx.fillRect(tl.x - wallW, tl.y - wallW, aw + wallW * 2, wallW);          // top
-    ctx.fillRect(tl.x - wallW, br.y, aw + wallW * 2, wallW);                   // bottom
-    ctx.fillRect(tl.x - wallW, tl.y, wallW, ah);                                // left
-    ctx.fillRect(br.x, tl.y, wallW, ah);                                        // right
-    // Highlight edge
-    ctx.fillStyle = "#6ab55a";
-    ctx.fillRect(tl.x, tl.y, aw, 2 * scaleY);       // top inner highlight
-    ctx.fillRect(tl.x, tl.y, 2 * scaleX, ah);        // left inner highlight
-    // Shadow edge
-    ctx.fillStyle = "rgba(0,0,0,0.2)";
-    ctx.fillRect(tl.x, br.y - 2 * scaleY, aw, 2 * scaleY);  // bottom inner shadow
-    ctx.fillRect(br.x - 2 * scaleX, tl.y, 2 * scaleX, ah);  // right inner shadow
+    // Thick 3D beveled wall border (Brawl Stars blue walls)
+    const wallW = 10 * scaleX;
+    // Outer wall (dark blue)
+    ctx.fillStyle = "#1a3a6a";
+    ctx.fillRect(tl.x - wallW, tl.y - wallW, aw + wallW * 2, wallW);
+    ctx.fillRect(tl.x - wallW, br.y, aw + wallW * 2, wallW);
+    ctx.fillRect(tl.x - wallW, tl.y, wallW, ah);
+    ctx.fillRect(br.x, tl.y, wallW, ah);
+    // Mid wall (medium blue)
+    const wallW2 = 5 * scaleX;
+    ctx.fillStyle = "#2a5a9a";
+    ctx.fillRect(tl.x - wallW2, tl.y - wallW2, aw + wallW2 * 2, wallW2);
+    ctx.fillRect(tl.x - wallW2, br.y, aw + wallW2 * 2, wallW2);
+    ctx.fillRect(tl.x - wallW2, tl.y, wallW2, ah);
+    ctx.fillRect(br.x, tl.y, wallW2, ah);
+    // Inner highlight
+    ctx.fillStyle = "#4a8acc";
+    ctx.fillRect(tl.x, tl.y, aw, 3 * scaleY);
+    ctx.fillRect(tl.x, tl.y, 3 * scaleX, ah);
+    // Inner shadow
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fillRect(tl.x, br.y - 3 * scaleY, aw, 3 * scaleY);
+    ctx.fillRect(br.x - 3 * scaleX, tl.y, 3 * scaleX, ah);
 
-    // Corner accents (gold/yellow)
-    const cornerSize = 16 * scaleX;
-    ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 3;
-    ctx.lineCap = "round";
-    // Top-left
-    ctx.beginPath(); ctx.moveTo(tl.x, tl.y + cornerSize); ctx.lineTo(tl.x, tl.y); ctx.lineTo(tl.x + cornerSize, tl.y); ctx.stroke();
-    // Top-right
-    ctx.beginPath(); ctx.moveTo(br.x - cornerSize, tl.y); ctx.lineTo(br.x, tl.y); ctx.lineTo(br.x, tl.y + cornerSize); ctx.stroke();
-    // Bottom-left
-    ctx.beginPath(); ctx.moveTo(tl.x, br.y - cornerSize); ctx.lineTo(tl.x, br.y); ctx.lineTo(tl.x + cornerSize, br.y); ctx.stroke();
-    // Bottom-right
-    ctx.beginPath(); ctx.moveTo(br.x - cornerSize, br.y); ctx.lineTo(br.x, br.y); ctx.lineTo(br.x, br.y - cornerSize); ctx.stroke();
-    ctx.lineCap = "butt";
+    // Corner bolts (gold circles at corners — Brawl Stars style)
+    const boltR = 6 * scaleX;
+    const corners = [[tl.x, tl.y], [br.x, tl.y], [tl.x, br.y], [br.x, br.y]];
+    for (const [cx, cy] of corners) {
+        ctx.fillStyle = "#ffd700";
+        ctx.shadowColor = "#ffaa00";
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(cx, cy, boltR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffeeaa";
+        ctx.beginPath();
+        ctx.arc(cx - boltR * 0.2, cy - boltR * 0.2, boltR * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
 
     // Vignette around edges
     ctx.globalAlpha = 0.3;
@@ -1133,11 +1091,31 @@ function drawPlayer(index) {
     ctx.translate(0, bob + bounceY);
     ctx.scale(bounceScale, bounceScale);
 
-    // Sprite (drawn larger: 3x radius)
-    const spriteName = index === 0 ? "k1" : "k2";
-    if (sprites[spriteName]) {
+    // Determine facing direction from velocity
+    const base = index === 0 ? "k1" : "k2";
+    let vx = 0, vy = 0;
+    if (isMe) {
+        vx = localVx; vy = localVy;
+    } else if (players[index].targetX !== undefined) {
+        vx = players[index].targetX - players[index].x;
+        vy = players[index].targetY - players[index].y;
+    }
+    if (Math.abs(vx) > 1 || Math.abs(vy) > 1) {
+        if (Math.abs(vx) > Math.abs(vy)) {
+            playerDir[index] = vx > 0 ? "right" : "left";
+        } else {
+            playerDir[index] = vy > 0 ? "front" : "back";
+        }
+    }
+
+    // Use directional 3D sprite, fallback to legacy
+    const dirSprite = sprites[`${base}_${playerDir[index]}`];
+    const legacySprite = sprites[base];
+    const activeSprite = dirSprite || legacySprite;
+
+    if (activeSprite) {
         const size = r * 3;
-        ctx.drawImage(sprites[spriteName], -size / 2, -size / 2, size, size);
+        ctx.drawImage(activeSprite, -size / 2, -size / 2, size, size);
     } else {
         // Fallback: colorful circle with gradient
         const fallGrad = ctx.createRadialGradient(0, -r * 0.3, 0, 0, 0, r);
@@ -1151,11 +1129,6 @@ function drawPlayer(index) {
         ctx.fillStyle = fallGrad;
         ctx.beginPath();
         ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.fill();
-        // Highlight
-        ctx.fillStyle = "rgba(255,255,255,0.3)";
-        ctx.beginPath();
-        ctx.arc(-r * 0.2, -r * 0.25, r * 0.4, 0, Math.PI * 2);
         ctx.fill();
     }
 
@@ -1274,10 +1247,11 @@ function drawDashTrails(dt) {
             ctx.fill();
         }
 
-        const spriteName = trail.index === 0 ? "k1" : "k2";
-        if (sprites[spriteName]) {
+        const base = trail.index === 0 ? "k1" : "k2";
+        const trailSprite = sprites[`${base}_${playerDir[trail.index]}`] || sprites[base];
+        if (trailSprite) {
             const size = r * 3;
-            ctx.drawImage(sprites[spriteName], sp.x - size / 2, sp.y - size / 2, size, size);
+            ctx.drawImage(trailSprite, sp.x - size / 2, sp.y - size / 2, size, size);
         }
     }
     ctx.globalAlpha = 1;

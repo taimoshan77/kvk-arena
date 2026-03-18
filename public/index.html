@@ -12,28 +12,28 @@
         <canvas id="gameCanvas"></canvas>
 
         <!-- Title Screen -->
-        <div id="title-screen" class="overlay">
-            <div class="title-container">
-                <div class="title-fighters">
-                    <img src="/assets/k1.png" alt="K1" class="fighter-img fighter-left">
-                    <span class="vs-badge">VS</span>
-                    <img src="/assets/k2.png" alt="K2" class="fighter-img fighter-right">
-                </div>
-                <div class="title-text">
+        <div id="title-screen" class="overlay title-overlay">
+            <!-- Hero image section -->
+            <div class="hero-section">
+                <img src="/assets/kk-top.png" alt="K vs K" class="hero-image">
+                <div class="hero-title-overlay">
                     <h1 class="game-title">K vs K</h1>
                     <p class="subtitle">1v1 ARENA SHOOTER</p>
                 </div>
             </div>
-            <div class="menu-buttons">
-                <button id="btn-create" class="menu-btn primary">CREATE ROOM</button>
-                <div class="join-row">
-                    <input type="text" id="room-code-input" class="code-input" placeholder="CODE" maxlength="4" autocomplete="off">
-                    <button id="btn-join" class="menu-btn primary">JOIN</button>
+            <!-- Menu section -->
+            <div class="menu-section">
+                <div class="menu-buttons">
+                    <button id="btn-quick" class="menu-btn primary big-btn">QUICK MATCH</button>
+                    <button id="btn-create" class="menu-btn primary">CREATE ROOM</button>
+                    <div class="join-row">
+                        <input type="text" id="room-code-input" class="code-input" placeholder="CODE" maxlength="4" autocomplete="off">
+                        <button id="btn-join" class="menu-btn primary">JOIN</button>
+                    </div>
                 </div>
-                <button id="btn-quick" class="menu-btn primary">QUICK MATCH</button>
+                <p class="controls-hint desktop-only">WASD to move — Click to shoot — Shift to dash</p>
+                <p class="controls-hint mobile-only">Touch controls enabled</p>
             </div>
-            <p class="controls-hint desktop-only">WASD to move — Click to shoot — Shift to dash</p>
-            <p class="controls-hint mobile-only">Touch controls enabled</p>
         </div>
 
         <!-- Waiting Screen -->
