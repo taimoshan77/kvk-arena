@@ -1,0 +1,558 @@
+/* ============================================
+   K vs K — Styles
+   ============================================ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    background: #0a0a1a;
+    overflow: hidden;
+    font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+#game-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+}
+
+#gameCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #0a0a1a;
+}
+
+/* ============================================
+   OVERLAYS
+   ============================================ */
+
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    background: rgba(10, 10, 26, 0.92);
+    backdrop-filter: blur(6px);
+    transition: opacity 0.3s;
+}
+
+.overlay.hidden {
+    display: none;
+}
+
+/* Title Screen */
+.title-container {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.title-fighters {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+}
+
+.fighter-img {
+    width: 100px;
+    height: 100px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 15px rgba(255, 100, 0, 0.5));
+    animation: fighterFloat 3s ease-in-out infinite;
+}
+
+.fighter-left { animation-delay: 0s; }
+.fighter-right { animation-delay: 1.5s; }
+
+@keyframes fighterFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+.title-text {
+    text-align: center;
+}
+
+.game-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 64px;
+    font-weight: 900;
+    background: linear-gradient(180deg, #ff6622, #ff0044, #ff6622);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 30px rgba(255, 50, 0, 0.6));
+    animation: titlePulse 3s ease-in-out infinite;
+}
+
+@keyframes titlePulse {
+    0%, 100% { filter: drop-shadow(0 0 30px rgba(255, 50, 0, 0.6)); }
+    50% { filter: drop-shadow(0 0 50px rgba(255, 100, 0, 0.9)); }
+}
+
+.subtitle {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    letter-spacing: 6px;
+    color: #ff8844;
+    margin-top: 8px;
+    opacity: 0.8;
+}
+
+/* Menu */
+.menu-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.menu-btn {
+    font-family: 'Orbitron', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 14px 44px;
+    border: 2px solid rgba(255, 100, 34, 0.5);
+    border-radius: 4px;
+    background: rgba(255, 100, 34, 0.08);
+    color: #ff8844;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+    min-width: 260px;
+}
+
+.menu-btn:hover, .menu-btn:active {
+    background: rgba(255, 100, 34, 0.2);
+    border-color: #ff6622;
+    box-shadow: 0 0 20px rgba(255, 100, 34, 0.3);
+    transform: scale(1.02);
+}
+
+.menu-btn.primary {
+    background: linear-gradient(135deg, rgba(255, 100, 34, 0.2), rgba(255, 0, 68, 0.2));
+    border-color: #ff0044;
+    color: #fff;
+}
+
+.menu-btn.primary:hover, .menu-btn.primary:active {
+    background: linear-gradient(135deg, rgba(255, 100, 34, 0.35), rgba(255, 0, 68, 0.35));
+    box-shadow: 0 0 25px rgba(255, 0, 68, 0.4);
+}
+
+.join-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.code-input {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid rgba(255, 100, 34, 0.4);
+    border-radius: 4px;
+    color: #fff;
+    outline: none;
+    width: 120px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.code-input:focus {
+    border-color: #ff6622;
+    box-shadow: 0 0 15px rgba(255, 100, 34, 0.3);
+}
+
+.controls-hint {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.35);
+    letter-spacing: 1px;
+}
+
+/* Screen title */
+.screen-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 28px;
+    color: #ff8844;
+    margin-bottom: 24px;
+    letter-spacing: 3px;
+}
+
+/* Waiting screen */
+.room-code-display {
+    font-family: 'Orbitron', monospace;
+    font-size: 48px;
+    font-weight: 900;
+    color: #ff6622;
+    text-shadow: 0 0 20px rgba(255, 100, 34, 0.5);
+    margin-bottom: 16px;
+    letter-spacing: 8px;
+}
+
+.queue-status {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    color: #ff8844;
+    margin-top: 12px;
+    opacity: 0.7;
+}
+
+.queue-status.hidden { display: none; }
+
+/* Game Over */
+.result-title {
+    font-size: 48px !important;
+}
+
+.result-title.win {
+    color: #00ff88 !important;
+    text-shadow: 0 0 30px rgba(0, 255, 136, 0.6);
+}
+
+.result-title.lose {
+    color: #ff0044 !important;
+    text-shadow: 0 0 30px rgba(255, 0, 68, 0.6);
+}
+
+.result-stats {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 30px;
+}
+
+.stat-box { text-align: center; }
+
+.stat-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+}
+
+.stat-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: #ff8844;
+}
+
+/* Error */
+.error-display {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    color: #ff0044;
+    background: rgba(255, 0, 68, 0.15);
+    border: 1px solid rgba(255, 0, 68, 0.4);
+    padding: 10px 24px;
+    border-radius: 4px;
+    pointer-events: none;
+}
+
+.error-display.hidden { display: none; }
+
+/* ============================================
+   HUD
+   ============================================ */
+
+#hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    z-index: 50;
+    pointer-events: none;
+}
+
+#hud.hidden { display: none; }
+
+.hud-left, .hud-right {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.hud-right { align-items: flex-end; }
+
+.hud-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.hp-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hp-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: 1px;
+    min-width: 50px;
+}
+
+.hp-bar-bg {
+    width: 140px;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.hp-bar {
+    width: 100%;
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.15s;
+}
+
+.hp-bar.self {
+    background: linear-gradient(90deg, #00cc66, #00ff88);
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+}
+
+.hp-bar.enemy {
+    background: linear-gradient(90deg, #ff0044, #ff3366);
+    box-shadow: 0 0 8px rgba(255, 0, 68, 0.4);
+}
+
+.hp-text {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    min-width: 30px;
+}
+
+.powerup-indicator {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    color: #ffd700;
+    letter-spacing: 1px;
+    padding: 4px 12px;
+    background: rgba(255, 215, 0, 0.1);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    border-radius: 3px;
+}
+
+.powerup-indicator.hidden { display: none; }
+
+.dash-indicator {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    color: #00aaff;
+    letter-spacing: 1px;
+    opacity: 0.7;
+}
+
+.dash-indicator.on-cooldown {
+    color: #555;
+    opacity: 0.4;
+}
+
+/* ============================================
+   MOBILE CONTROLS
+   ============================================ */
+
+#mobile-controls.hidden { display: none; }
+
+.joystick-zone {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 45%;
+    height: 40%;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.joystick-base {
+    width: 120px;
+    height: 120px;
+    border: 2px solid rgba(255, 100, 34, 0.3);
+    border-radius: 50%;
+    background: rgba(255, 100, 34, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.joystick-thumb {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 100, 34, 0.4), rgba(255, 100, 34, 0.15));
+    border: 2px solid rgba(255, 100, 34, 0.5);
+    position: absolute;
+    transition: none;
+}
+
+.mobile-buttons {
+    position: fixed;
+    right: 20px;
+    bottom: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 60;
+}
+
+.mobile-action-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    border: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.fire-btn {
+    background: radial-gradient(circle, rgba(255, 0, 68, 0.5), rgba(255, 0, 68, 0.15));
+    border: 2px solid rgba(255, 0, 68, 0.6);
+    color: #ff3366;
+    box-shadow: 0 0 20px rgba(255, 0, 68, 0.2);
+}
+
+.fire-btn:active {
+    background: radial-gradient(circle, rgba(255, 0, 68, 0.7), rgba(255, 0, 68, 0.3));
+}
+
+.dash-btn {
+    background: radial-gradient(circle, rgba(0, 170, 255, 0.4), rgba(0, 170, 255, 0.1));
+    border: 2px solid rgba(0, 170, 255, 0.5);
+    color: #00aaff;
+    box-shadow: 0 0 20px rgba(0, 170, 255, 0.15);
+    width: 64px;
+    height: 64px;
+    font-size: 10px;
+}
+
+.dash-btn:active {
+    background: radial-gradient(circle, rgba(0, 170, 255, 0.6), rgba(0, 170, 255, 0.25));
+}
+
+/* ============================================
+   NOTIFICATIONS
+   ============================================ */
+
+#notifications {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 80;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.notification {
+    font-family: 'Orbitron', monospace;
+    font-weight: 700;
+    padding: 6px 16px;
+    border-radius: 4px;
+    animation: notifFloat 1.5s ease-out forwards;
+    white-space: nowrap;
+}
+
+.notif-hit {
+    font-size: 20px;
+    color: #ff3366;
+    text-shadow: 0 0 10px rgba(255, 51, 102, 0.6);
+}
+
+.notif-powerup {
+    font-size: 22px;
+    color: #ffd700;
+    text-shadow: 0 0 12px rgba(255, 215, 0, 0.5);
+}
+
+.notif-dash {
+    font-size: 18px;
+    color: #00aaff;
+    text-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
+}
+
+.notif-big {
+    font-size: 36px;
+    color: #fff;
+    text-shadow: 0 0 25px rgba(255, 100, 34, 0.7);
+    animation: notifWave 2s ease-out forwards;
+}
+
+@keyframes notifFloat {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-60px) scale(1.1); }
+}
+
+@keyframes notifWave {
+    0% { opacity: 0; transform: scale(0.5); }
+    15% { opacity: 1; transform: scale(1.1); }
+    25% { transform: scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: scale(1); }
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+.mobile-only { display: none; }
+
+@media (max-width: 768px), (pointer: coarse) {
+    .desktop-only { display: none; }
+    .mobile-only { display: block; }
+    .game-title { font-size: 42px; }
+    .fighter-img { width: 70px; height: 70px; }
+    .menu-btn { min-width: 220px; font-size: 13px; padding: 12px 28px; }
+    .hp-bar-bg { width: 100px; }
+    .room-code-display { font-size: 36px; }
+}
+
+@media (max-width: 400px) {
+    .game-title { font-size: 32px; }
+    .subtitle { font-size: 10px; letter-spacing: 3px; }
+    .fighter-img { width: 55px; height: 55px; }
+}

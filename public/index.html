@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>K vs K</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Title Screen -->
+        <div id="title-screen" class="overlay">
+            <div class="title-container">
+                <div class="title-fighters">
+                    <img src="/assets/k1.png" alt="K1" class="fighter-img fighter-left">
+                    <div class="title-text">
+                        <h1 class="game-title">K vs K</h1>
+                        <p class="subtitle">1v1 ARENA SHOOTER</p>
+                    </div>
+                    <img src="/assets/k2.png" alt="K2" class="fighter-img fighter-right">
+                </div>
+            </div>
+            <div class="menu-buttons">
+                <button id="btn-create" class="menu-btn primary">CREATE ROOM</button>
+                <div class="join-row">
+                    <input type="text" id="room-code-input" class="code-input" placeholder="CODE" maxlength="4" autocomplete="off">
+                    <button id="btn-join" class="menu-btn primary">JOIN</button>
+                </div>
+                <button id="btn-quick" class="menu-btn primary">QUICK MATCH</button>
+            </div>
+            <p class="controls-hint desktop-only">WASD to move — Click to shoot — Shift to dash</p>
+            <p class="controls-hint mobile-only">Touch controls enabled</p>
+        </div>
+
+        <!-- Waiting Screen -->
+        <div id="waiting-screen" class="overlay hidden">
+            <h2 class="screen-title">WAITING FOR OPPONENT</h2>
+            <div class="room-code-display">ROOM: <span id="room-code-val">----</span></div>
+            <p class="controls-hint">Share this code with your opponent</p>
+            <div id="queue-status" class="queue-status hidden"></div>
+            <button id="btn-cancel" class="menu-btn">CANCEL</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="overlay hidden">
+            <h2 id="result-title" class="screen-title result-title">YOU WIN!</h2>
+            <div class="result-stats">
+                <div class="stat-box">
+                    <div class="stat-label">YOUR HP</div>
+                    <div id="result-my-hp" class="stat-val">0</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">OPPONENT HP</div>
+                    <div id="result-opp-hp" class="stat-val">0</div>
+                </div>
+            </div>
+            <button id="btn-restart" class="menu-btn primary">PLAY AGAIN</button>
+            <button id="btn-menu" class="menu-btn">MAIN MENU</button>
+            <div id="restart-status" class="queue-status hidden"></div>
+        </div>
+
+        <!-- Error Display -->
+        <div id="error-display" class="error-display hidden"></div>
+
+        <!-- HUD -->
+        <div id="hud" class="hidden">
+            <div class="hud-left">
+                <div class="hp-bar-container">
+                    <div class="hp-label">YOU</div>
+                    <div class="hp-bar-bg"><div id="hp-bar-self" class="hp-bar self"></div></div>
+                    <div id="hp-text-self" class="hp-text">100</div>
+                </div>
+            </div>
+            <div class="hud-center">
+                <div id="powerup-indicator" class="powerup-indicator hidden"></div>
+                <div id="dash-indicator" class="dash-indicator">DASH READY</div>
+            </div>
+            <div class="hud-right">
+                <div class="hp-bar-container">
+                    <div class="hp-label">ENEMY</div>
+                    <div class="hp-bar-bg"><div id="hp-bar-enemy" class="hp-bar enemy"></div></div>
+                    <div id="hp-text-enemy" class="hp-text">100</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Controls -->
+        <div id="mobile-controls" class="hidden">
+            <div id="joystick-zone" class="joystick-zone">
+                <div id="joystick-base" class="joystick-base">
+                    <div id="joystick-thumb" class="joystick-thumb"></div>
+                </div>
+            </div>
+            <div class="mobile-buttons">
+                <button id="btn-mobile-fire" class="mobile-action-btn fire-btn">FIRE</button>
+                <button id="btn-mobile-dash" class="mobile-action-btn dash-btn">DASH</button>
+            </div>
+        </div>
+
+        <!-- Notifications -->
+        <div id="notifications"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
