@@ -16,11 +16,12 @@
             <div class="title-container">
                 <div class="title-fighters">
                     <img src="/assets/k1.png" alt="K1" class="fighter-img fighter-left">
-                    <div class="title-text">
-                        <h1 class="game-title">K vs K</h1>
-                        <p class="subtitle">1v1 ARENA SHOOTER</p>
-                    </div>
+                    <span class="vs-badge">VS</span>
                     <img src="/assets/k2.png" alt="K2" class="fighter-img fighter-right">
+                </div>
+                <div class="title-text">
+                    <h1 class="game-title">K vs K</h1>
+                    <p class="subtitle">1v1 ARENA SHOOTER</p>
                 </div>
             </div>
             <div class="menu-buttons">
@@ -46,6 +47,7 @@
 
         <!-- Game Over Screen -->
         <div id="gameover-screen" class="overlay hidden">
+            <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
             <h2 id="result-title" class="screen-title result-title">YOU WIN!</h2>
             <div class="result-stats">
                 <div class="stat-box">
