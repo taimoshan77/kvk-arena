@@ -31,8 +31,47 @@
                         <button id="btn-join" class="menu-btn primary">JOIN</button>
                     </div>
                 </div>
+                <button id="btn-how-to-play" class="how-to-play-link">HOW TO PLAY</button>
                 <p class="controls-hint desktop-only">WASD to move — Click to shoot/kick — Shift to dash/super kick</p>
                 <p class="controls-hint mobile-only">Touch controls enabled</p>
+            </div>
+        </div>
+
+        <!-- How to Play Modal -->
+        <div id="how-to-play-modal" class="overlay hidden">
+            <div class="guide-container">
+                <h2 class="screen-title">HOW TO PLAY</h2>
+
+                <div class="guide-section">
+                    <h3 class="guide-heading">OBJECTIVE</h3>
+                    <p class="guide-text">Score goals by kicking the ball into your opponent's net. First to <strong>2 goals</strong> wins. Match lasts <strong>2 minutes</strong> — if tied, <strong>1 minute overtime</strong>.</p>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-heading">THE BALL</h3>
+                    <p class="guide-text"><strong>Pick up:</strong> Walk into the ball to grab it automatically.</p>
+                    <p class="guide-text"><strong>Kick:</strong> Click (or FIRE) while holding the ball to kick it where you're aiming. No bullets fire while you have the ball.</p>
+                    <p class="guide-text"><strong>Super Kick:</strong> Press Shift (or DASH) while holding the ball to launch it straight at the enemy goal.</p>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-heading">COMBAT</h3>
+                    <p class="guide-text"><strong>Shoot:</strong> Click to fire bullets at your opponent (when not holding the ball).</p>
+                    <p class="guide-text"><strong>Dash:</strong> Press Shift to dash in your movement direction (when not holding the ball).</p>
+                    <p class="guide-text"><strong>Death:</strong> When eliminated, you respawn after 3 seconds and drop the ball.</p>
+                </div>
+
+                <div class="guide-section">
+                    <h3 class="guide-heading desktop-only">CONTROLS</h3>
+                    <div class="guide-controls desktop-only">
+                        <div class="control-row"><span class="control-key">WASD</span> <span class="guide-text">Move</span></div>
+                        <div class="control-row"><span class="control-key">CLICK</span> <span class="guide-text">Shoot / Kick ball</span></div>
+                        <div class="control-row"><span class="control-key">SHIFT</span> <span class="guide-text">Dash / Super kick</span></div>
+                    </div>
+                    <p class="guide-text mobile-only">Use the joystick to move. FIRE button shoots or kicks. DASH button dashes or super kicks.</p>
+                </div>
+
+                <button id="btn-close-guide" class="menu-btn primary">GOT IT</button>
             </div>
         </div>
 

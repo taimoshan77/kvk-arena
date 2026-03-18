@@ -137,6 +137,92 @@ body {
     margin-top: 4px;
 }
 
+/* How to Play link */
+.how-to-play-link {
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(255, 215, 0, 0.7);
+    background: none;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 2px;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    margin-bottom: 12px;
+    padding: 4px 8px;
+    transition: all 0.2s;
+}
+
+.how-to-play-link:hover, .how-to-play-link:active {
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* How to Play Guide */
+.guide-container {
+    max-width: 520px;
+    width: 90%;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 30px 28px;
+    background: rgba(10, 15, 40, 0.95);
+    border: 2px solid rgba(255, 215, 0, 0.3);
+    border-radius: 16px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+}
+
+.guide-section {
+    margin-bottom: 20px;
+}
+
+.guide-heading {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffd700;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+}
+
+.guide-text {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.5;
+    margin-bottom: 4px;
+}
+
+.guide-text strong {
+    color: #ffd700;
+}
+
+.guide-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.control-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.control-key {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+    padding: 4px 10px;
+    min-width: 60px;
+    text-align: center;
+}
+
 /* Menu */
 .menu-buttons {
     display: flex;

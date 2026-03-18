@@ -1671,6 +1671,16 @@ document.getElementById("room-code-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") document.getElementById("btn-join").click();
 });
 
+document.getElementById("btn-how-to-play").addEventListener("click", () => {
+    SFX.click();
+    document.getElementById("how-to-play-modal").classList.remove("hidden");
+});
+
+document.getElementById("btn-close-guide").addEventListener("click", () => {
+    SFX.click();
+    document.getElementById("how-to-play-modal").classList.add("hidden");
+});
+
 // ============================================
 // INIT
 // ============================================
