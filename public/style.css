@@ -550,6 +550,25 @@ body {
     50% { opacity: 1; text-shadow: 0 0 15px rgba(0, 200, 255, 0.8); }
 }
 
+.weapon-indicator {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    animation: weaponPulse 0.8s infinite;
+}
+
+.weapon-fast { color: #44ff44; text-shadow: 0 0 8px rgba(68, 255, 68, 0.6); }
+.weapon-laser { color: #ff44ff; text-shadow: 0 0 8px rgba(255, 68, 255, 0.6); }
+.weapon-bomb { color: #ff4444; text-shadow: 0 0 8px rgba(255, 68, 68, 0.6); }
+
+@keyframes weaponPulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
+}
+
 /* ============================================
    MOBILE CONTROLS
    ============================================ */

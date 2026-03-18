@@ -42,12 +42,30 @@ const CFG = {
     BALL_DROP_SPEED: 100,
     GOAL_WIDTH: 120,
     GOAL_DEPTH: 30,
-    GOALS_TO_WIN: 2,
+    GOALS_TO_WIN: 10,
     MATCH_DURATION: 120000,    // 2 minutes
     OVERTIME_DURATION: 60000,  // 1 minute
     RESPAWN_TIME: 3000,        // 3 seconds
     TACKLE_RADIUS: 50,         // dash tackle range
     KICK_PICKUP_GRACE: 2000,   // ms before kicker/tackled player can re-pick up ball
+
+    // Obstacles
+    OBSTACLE_COUNT: 4,
+    OBSTACLE_MIN_RADIUS: 15,
+    OBSTACLE_MAX_RADIUS: 25,
+    OBSTACLE_SPAWN_MARGIN: 80,
+
+    // Goalkeepers
+    GK_RADIUS: 18,
+    GK_SPEED: 80,              // px/s
+    GK_DIRECTION_CHANGE: 1500, // ms
+
+    // Weapons
+    WEAPON_SPAWN_INTERVAL: 8000,  // ms
+    WEAPON_DURATION: 10000,       // ms
+    WEAPON_PICKUP_RADIUS: 15,
+    WEAPON_MAX_ON_FIELD: 2,
+    WEAPON_SPAWN_MARGIN: 60,
 };
 
 // ============================================
@@ -81,6 +99,11 @@ function createRoom(p1Socket, p2Socket) {
         score: [0, 0],
         matchTimer: CFG.MATCH_DURATION,
         overtime: false,
+        obstacles: generateObstacles(),
+        goalkeepers: createGoalkeepers(),
+        weapons: [],
+        nextWeaponId: 0,
+        nextWeaponSpawn: Date.now() + CFG.WEAPON_SPAWN_INTERVAL,
     };
     rooms.set(code, room);
 
@@ -120,6 +143,8 @@ function createPlayer(index, socket) {
         alive: true,
         hasBall: false,
         respawnTimer: 0,
+        weapon: null,
+        weaponExpiry: 0,
     };
 }
 
@@ -143,9 +168,15 @@ function resetPositions(room) {
         p.alive = true;
         p.hasBall = false;
         p.respawnTimer = 0;
+        p.weapon = null;
+        p.weaponExpiry = 0;
     }
     room.ball = { x: CFG.ARENA_W / 2, y: CFG.ARENA_H / 2, vx: 0, vy: 0, carrier: -1, lastKicker: -1, lastKickTime: 0 };
     room.bullets = [];
+    room.obstacles = generateObstacles();
+    room.goalkeepers = createGoalkeepers();
+    room.weapons = [];
+    room.nextWeaponSpawn = Date.now() + CFG.WEAPON_SPAWN_INTERVAL;
 }
 
 function getGoalY() {
@@ -157,6 +188,69 @@ function getGoalY() {
 
 function getSpawnPos(index) {
     return { x: index === 0 ? 150 : 650, y: CFG.ARENA_H / 2 };
+}
+
+// ============================================
+// OBSTACLE GENERATION
+// ============================================
+function generateObstacles() {
+    const obstacles = [];
+    const margin = CFG.OBSTACLE_SPAWN_MARGIN;
+    const centerX = CFG.ARENA_W / 2;
+    const centerY = CFG.ARENA_H / 2;
+    for (let i = 0; i < CFG.OBSTACLE_COUNT; i++) {
+        const r = CFG.OBSTACLE_MIN_RADIUS + Math.random() * (CFG.OBSTACLE_MAX_RADIUS - CFG.OBSTACLE_MIN_RADIUS);
+        let x, y, valid;
+        let attempts = 0;
+        do {
+            valid = true;
+            x = margin + Math.random() * (CFG.ARENA_W - margin * 2);
+            y = margin + Math.random() * (CFG.ARENA_H - margin * 2);
+            // Avoid center (ball spawn)
+            if (Math.abs(x - centerX) < 80 && Math.abs(y - centerY) < 80) valid = false;
+            // Avoid goals
+            if (x < 60 || x > CFG.ARENA_W - 60) valid = false;
+            // Avoid other obstacles
+            for (const o of obstacles) {
+                const dx = x - o.x, dy = y - o.y;
+                if (Math.sqrt(dx * dx + dy * dy) < r + o.r + 20) valid = false;
+            }
+            attempts++;
+        } while (!valid && attempts < 50);
+        if (valid) obstacles.push({ x, y, r });
+    }
+    return obstacles;
+}
+
+// ============================================
+// GOALKEEPER HELPERS
+// ============================================
+function createGoalkeepers() {
+    const goalTop = (CFG.ARENA_H - CFG.GOAL_WIDTH) / 2;
+    const goalBottom = goalTop + CFG.GOAL_WIDTH;
+    const patrolMin = goalTop + CFG.GK_RADIUS;
+    const patrolMax = goalBottom - CFG.GK_RADIUS;
+    return [
+        { x: 15, y: CFG.ARENA_H / 2, dir: 1, nextChange: Date.now() + CFG.GK_DIRECTION_CHANGE, patrolMin, patrolMax, team: 0 },
+        { x: CFG.ARENA_W - 15, y: CFG.ARENA_H / 2, dir: -1, nextChange: Date.now() + CFG.GK_DIRECTION_CHANGE, patrolMin, patrolMax, team: 1 },
+    ];
+}
+
+// ============================================
+// WEAPON HELPERS
+// ============================================
+const WEAPON_TYPES = ["fast", "laser", "bomb"];
+
+function spawnWeapon(room) {
+    const margin = CFG.WEAPON_SPAWN_MARGIN;
+    const x = margin + Math.random() * (CFG.ARENA_W - margin * 2);
+    const y = margin + Math.random() * (CFG.ARENA_H - margin * 2);
+    const type = WEAPON_TYPES[Math.floor(Math.random() * WEAPON_TYPES.length)];
+    const weapon = { x, y, type, id: room.nextWeaponId++ };
+    room.weapons.push(weapon);
+    for (const p of room.players) {
+        if (p) p.socket.emit("weapon_spawned", { x, y, type, id: weapon.id });
+    }
 }
 
 function dropBall(room, p) {
@@ -257,6 +351,32 @@ function tickRoom(room) {
         }
     }
 
+    // --- Weapon expiry ---
+    for (const p of room.players) {
+        if (p.weapon && now >= p.weaponExpiry) {
+            p.weapon = null;
+            p.weaponExpiry = 0;
+            p.socket.emit("weapon_expired_player");
+        }
+    }
+
+    // --- Weapon spawn timer ---
+    if (now >= room.nextWeaponSpawn && room.weapons.length < CFG.WEAPON_MAX_ON_FIELD) {
+        spawnWeapon(room);
+        room.nextWeaponSpawn = now + CFG.WEAPON_SPAWN_INTERVAL;
+    }
+
+    // --- Goalkeeper AI ---
+    for (const gk of room.goalkeepers) {
+        if (now >= gk.nextChange) {
+            gk.dir = -gk.dir;
+            gk.nextChange = now + CFG.GK_DIRECTION_CHANGE + Math.random() * 500;
+        }
+        gk.y += gk.dir * CFG.GK_SPEED * dt;
+        if (gk.y < gk.patrolMin) { gk.y = gk.patrolMin; gk.dir = 1; }
+        if (gk.y > gk.patrolMax) { gk.y = gk.patrolMax; gk.dir = -1; }
+    }
+
     // --- Update players ---
     const goal = getGoalY();
     for (const p of room.players) {
@@ -265,6 +385,36 @@ function tickRoom(room) {
         p.y += p.vy * dt;
         p.x = clamp(p.x, CFG.PLAYER_RADIUS, CFG.ARENA_W - CFG.PLAYER_RADIUS);
         p.y = clamp(p.y, CFG.PLAYER_RADIUS, CFG.ARENA_H - CFG.PLAYER_RADIUS);
+
+        // Player-obstacle collision (push out)
+        for (const obs of room.obstacles) {
+            const dx = p.x - obs.x;
+            const dy = p.y - obs.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const minDist = CFG.PLAYER_RADIUS + obs.r;
+            if (dist < minDist && dist > 0) {
+                const nx = dx / dist;
+                const ny = dy / dist;
+                p.x = obs.x + nx * minDist;
+                p.y = obs.y + ny * minDist;
+            }
+        }
+
+        // Weapon pickup
+        for (let wi = room.weapons.length - 1; wi >= 0; wi--) {
+            const w = room.weapons[wi];
+            const dx = p.x - w.x;
+            const dy = p.y - w.y;
+            if (dx * dx + dy * dy < (CFG.PLAYER_RADIUS + CFG.WEAPON_PICKUP_RADIUS) * (CFG.PLAYER_RADIUS + CFG.WEAPON_PICKUP_RADIUS)) {
+                p.weapon = w.type;
+                p.weaponExpiry = now + CFG.WEAPON_DURATION;
+                room.weapons.splice(wi, 1);
+                for (const pl of room.players) {
+                    if (pl) pl.socket.emit("weapon_pickup", { player: p.index, type: w.type, id: w.id });
+                }
+                break;
+            }
+        }
     }
 
     // --- Ball physics (when free) ---
@@ -334,6 +484,50 @@ function tickRoom(room) {
             }
         }
 
+        // --- Ball-obstacle collision ---
+        for (const obs of room.obstacles) {
+            const dx = ball.x - obs.x;
+            const dy = ball.y - obs.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const minDist = CFG.BALL_RADIUS + obs.r;
+            if (dist < minDist && dist > 0) {
+                // Push ball out
+                const nx = dx / dist;
+                const ny = dy / dist;
+                ball.x = obs.x + nx * minDist;
+                ball.y = obs.y + ny * minDist;
+                // Reflect velocity
+                const dot = ball.vx * nx + ball.vy * ny;
+                ball.vx -= 2 * dot * nx;
+                ball.vy -= 2 * dot * ny;
+                ball.vx *= CFG.BALL_BOUNCE_DAMPING;
+                ball.vy *= CFG.BALL_BOUNCE_DAMPING;
+            }
+        }
+
+        // --- Ball-GK collision ---
+        for (const gk of room.goalkeepers) {
+            const dx = ball.x - gk.x;
+            const dy = ball.y - gk.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const minDist = CFG.BALL_RADIUS + CFG.GK_RADIUS;
+            if (dist < minDist && dist > 0) {
+                const nx = dx / dist;
+                const ny = dy / dist;
+                ball.x = gk.x + nx * minDist;
+                ball.y = gk.y + ny * minDist;
+                // Reflect with extra outward push
+                const dot = ball.vx * nx + ball.vy * ny;
+                ball.vx -= 2 * dot * nx;
+                ball.vy -= 2 * dot * ny;
+                // Extra push away from goal
+                const pushDir = gk.team === 0 ? 1 : -1;
+                ball.vx += pushDir * 80;
+                ball.vx *= CFG.BALL_BOUNCE_DAMPING;
+                ball.vy *= CFG.BALL_BOUNCE_DAMPING;
+            }
+        }
+
         // --- Goal detection ---
         // Score when ball center crosses the wall line into the goal opening
         // Left goal (P0 defends): P1 scores
@@ -387,15 +581,66 @@ function tickRoom(room) {
             continue;
         }
 
+        // Bullet-obstacle collision (destroy bullet, unless laser)
+        if (!b.piercing) {
+            let hitObs = false;
+            for (const obs of room.obstacles) {
+                const dx = b.x - obs.x;
+                const dy = b.y - obs.y;
+                if (dx * dx + dy * dy < (CFG.BULLET_RADIUS + obs.r) * (CFG.BULLET_RADIUS + obs.r)) {
+                    hitObs = true;
+                    break;
+                }
+            }
+            if (hitObs) {
+                room.bullets.splice(i, 1);
+                continue;
+            }
+        }
+
         // Hit detection against opponent
         const target = room.players[1 - b.owner];
         if (target && target.alive) {
             const dx = b.x - target.x;
             const dy = b.y - target.y;
             if (dx * dx + dy * dy < (CFG.BULLET_RADIUS + CFG.PLAYER_RADIUS) * (CFG.BULLET_RADIUS + CFG.PLAYER_RADIUS)) {
+                // Bomb: AoE damage to all players in radius
+                if (b.bomb) {
+                    const aoeDamage = 40;
+                    const aoeRadius = 80;
+                    for (const p of room.players) {
+                        if (!p || !p.alive) continue;
+                        const adx = b.x - p.x;
+                        const ady = b.y - p.y;
+                        if (adx * adx + ady * ady < aoeRadius * aoeRadius) {
+                            p.hp -= aoeDamage;
+                            for (const pl of room.players) {
+                                if (pl) pl.socket.emit("player_hit", { target: p.index, hp: p.hp, damage: aoeDamage });
+                            }
+                            if (p.hp <= 0) {
+                                p.hp = 0;
+                                p.alive = false;
+                                p.respawnTimer = CFG.RESPAWN_TIME;
+                                if (ball.carrier === p.index) dropBall(room, p);
+                                for (const pl of room.players) {
+                                    if (pl) pl.socket.emit("player_killed", { player: p.index, killer: b.owner });
+                                }
+                            }
+                        }
+                    }
+                    for (const pl of room.players) {
+                        if (pl) pl.socket.emit("bomb_explode", { x: b.x, y: b.y, radius: aoeRadius });
+                    }
+                    room.bullets.splice(i, 1);
+                    continue;
+                }
+
                 const damage = b.damage || CFG.BULLET_DAMAGE;
                 target.hp -= damage;
-                room.bullets.splice(i, 1);
+                // Laser pierces (don't remove bullet), normal bullets removed
+                if (!b.piercing) {
+                    room.bullets.splice(i, 1);
+                }
 
                 // Notify hit
                 for (const p of room.players) {
@@ -439,12 +684,17 @@ function tickRoom(room) {
             hasBall: p.hasBall,
             dashCooldown: Math.max(0, CFG.DASH_COOLDOWN - (now - p.lastDashTime)),
             respawnTimer: p.respawnTimer,
+            weapon: p.weapon,
+            weaponTimer: p.weapon ? Math.max(0, p.weaponExpiry - now) : 0,
         })),
         bullets: room.bullets.map(b => ({
             id: b.id,
             x: b.x,
             y: b.y,
+            vx: b.vx,
+            vy: b.vy,
             owner: b.owner,
+            weaponType: b.weaponType || null,
         })),
         ball: {
             x: ball.x,
@@ -456,6 +706,9 @@ function tickRoom(room) {
         score: room.score,
         matchTimer: room.matchTimer,
         overtime: room.overtime,
+        obstacles: room.obstacles,
+        goalkeepers: room.goalkeepers.map(gk => ({ x: gk.x, y: gk.y, team: gk.team })),
+        weapons: room.weapons.map(w => ({ x: w.x, y: w.y, type: w.type, id: w.id })),
     };
 
     for (const p of room.players) {
@@ -486,6 +739,11 @@ io.on("connection", (socket) => {
             score: [0, 0],
             matchTimer: CFG.MATCH_DURATION,
             overtime: false,
+            obstacles: generateObstacles(),
+            goalkeepers: createGoalkeepers(),
+            weapons: [],
+            nextWeaponId: 0,
+            nextWeaponSpawn: Date.now() + CFG.WEAPON_SPAWN_INTERVAL,
         };
         room.players[0] = createPlayer(0, socket);
         rooms.set(code, room);
@@ -589,8 +847,23 @@ io.on("connection", (socket) => {
         p.lastFireTime = now;
 
         const angle = data.angle || 0;
-        const vx = Math.cos(angle) * CFG.BULLET_SPEED;
-        const vy = Math.sin(angle) * CFG.BULLET_SPEED;
+        let bulletSpeed = CFG.BULLET_SPEED;
+        let bulletDamage = CFG.BULLET_DAMAGE;
+        let piercing = false;
+        let bomb = false;
+
+        if (p.weapon === "fast") {
+            bulletSpeed = CFG.BULLET_SPEED * 2;
+        } else if (p.weapon === "laser") {
+            piercing = true;
+            bulletDamage = 30;
+        } else if (p.weapon === "bomb") {
+            bomb = true;
+            bulletDamage = 0; // damage handled by AoE
+        }
+
+        const vx = Math.cos(angle) * bulletSpeed;
+        const vy = Math.sin(angle) * bulletSpeed;
 
         const bullet = {
             id: room.nextBulletId++,
@@ -599,7 +872,10 @@ io.on("connection", (socket) => {
             vx,
             vy,
             owner: p.index,
-            damage: CFG.BULLET_DAMAGE,
+            damage: bulletDamage,
+            piercing,
+            bomb,
+            weaponType: p.weapon || null,
         };
         room.bullets.push(bullet);
     });
@@ -708,6 +984,7 @@ io.on("connection", (socket) => {
             room.score = [0, 0];
             room.matchTimer = CFG.MATCH_DURATION;
             room.overtime = false;
+            room.nextWeaponId = 0;
 
             resetPositions(room);
 

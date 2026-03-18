@@ -27,7 +27,7 @@ let CFG = {
     BALL_SUPER_KICK_SPEED: 700,
     GOAL_WIDTH: 120,
     GOAL_DEPTH: 30,
-    GOALS_TO_WIN: 2,
+    GOALS_TO_WIN: 10,
     MATCH_DURATION: 120000,
     OVERTIME_DURATION: 60000,
     RESPAWN_TIME: 3000,
@@ -194,6 +194,12 @@ let score = [0, 0];
 let matchTimer = 120000;
 let overtime = false;
 let goalFlash = 0; // screen flash on goal
+
+// New entities
+let obstacles = [];
+let goalkeepers = [];
+let weapons = [];
+let bombExplosions = []; // visual only
 
 // Local input
 const keys = {};
@@ -509,6 +515,10 @@ function connectSocket() {
         dashTrail = [];
         activeParticles.length = 0;
         moveTime = 0;
+        obstacles = [];
+        goalkeepers = [];
+        weapons = [];
+        bombExplosions = [];
         localX = players[myIndex].x;
         localY = players[myIndex].y;
         localVx = 0;
@@ -542,6 +552,8 @@ function connectSocket() {
             players[i].hasBall = sp.hasBall;
             players[i].dashCooldown = sp.dashCooldown;
             players[i].respawnTimer = sp.respawnTimer;
+            players[i].weapon = sp.weapon;
+            players[i].weaponTimer = sp.weaponTimer;
 
             if (i !== myIndex) {
                 players[i].targetX = sp.x;
@@ -571,6 +583,11 @@ function connectSocket() {
         score = state.score;
         matchTimer = state.matchTimer;
         overtime = state.overtime;
+
+        // Update new entities
+        if (state.obstacles) obstacles = state.obstacles;
+        if (state.goalkeepers) goalkeepers = state.goalkeepers;
+        if (state.weapons) weapons = state.weapons;
     });
 
     socket.on("player_hit", (data) => {
@@ -639,6 +656,29 @@ function connectSocket() {
         } else {
             notify("TACKLED!", "hit");
         }
+    });
+
+    socket.on("weapon_pickup", (data) => {
+        if (data.player === myIndex) {
+            SFX.dash();
+            notify(`${data.type.toUpperCase()} WEAPON!`, "powerup");
+        }
+        // Remove from local weapons array
+        weapons = weapons.filter(w => w.id !== data.id);
+    });
+
+    socket.on("weapon_spawned", (data) => {
+        weapons.push({ x: data.x, y: data.y, type: data.type, id: data.id });
+    });
+
+    socket.on("weapon_expired_player", () => {
+        notify("WEAPON EXPIRED", "hit");
+    });
+
+    socket.on("bomb_explode", (data) => {
+        SFX.hit();
+        bombExplosions.push({ x: data.x, y: data.y, radius: data.radius, alpha: 1.0 });
+        spawnExplosion(data.x, data.y, "#ff4400", 30);
     });
 
     socket.on("goal_scored", (data) => {
@@ -1379,6 +1419,26 @@ function drawPlayer(index) {
 
     ctx.restore();
 
+    // Weapon indicator ring
+    if (p.weapon) {
+        let weaponColor;
+        if (p.weapon === "fast") weaponColor = "#44ff44";
+        else if (p.weapon === "laser") weaponColor = "#ff44ff";
+        else weaponColor = "#ff4444";
+
+        ctx.save();
+        ctx.strokeStyle = weaponColor;
+        ctx.lineWidth = 2.5 * scaleX;
+        ctx.shadowColor = weaponColor;
+        ctx.shadowBlur = 10;
+        ctx.globalAlpha = 0.7 + Math.sin(Date.now() / 200) * 0.2;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r * 1.6, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
     // Health bar (smaller)
     ctx.globalAlpha = 1;
     const hpW = 36 * scaleX;
@@ -1417,19 +1477,60 @@ function drawBullets() {
         const sp = arenaToScreen(b.x, b.y);
         const r = CFG.BULLET_RADIUS * scaleX;
         const isMyBullet = b.owner === myIndex;
+        const wt = b.weaponType;
 
-        if (Math.random() < 0.4) {
-            const color = isMyBullet ? "#ff8800" : "#4488ff";
-            spawnParticle(b.x + (Math.random() - 0.5) * 4, b.y + (Math.random() - 0.5) * 4,
-                (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20,
-                0.15 + Math.random() * 0.1, color, 1.5 + Math.random() * 1.5);
+        // Weapon-specific trail colors
+        let trailColor, glowColor;
+        if (wt === "fast") {
+            trailColor = "#44ff44";
+            glowColor = "#44ff44";
+        } else if (wt === "laser") {
+            trailColor = "#ff44ff";
+            glowColor = "#ff44ff";
+        } else if (wt === "bomb") {
+            trailColor = "#ff4444";
+            glowColor = "#ff4444";
+        } else {
+            trailColor = isMyBullet ? "#ff8800" : "#4488ff";
+            glowColor = trailColor;
         }
 
-        ctx.shadowColor = isMyBullet ? "#ff8800" : "#4488ff";
-        ctx.shadowBlur = 12;
+        if (Math.random() < 0.4) {
+            spawnParticle(b.x + (Math.random() - 0.5) * 4, b.y + (Math.random() - 0.5) * 4,
+                (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20,
+                0.15 + Math.random() * 0.1, trailColor, 1.5 + Math.random() * 1.5);
+        }
 
-        const bulGrad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, r * 1.5);
-        if (isMyBullet) {
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = wt === "laser" ? 18 : 12;
+
+        // Laser: draw as elongated line
+        if (wt === "laser") {
+            ctx.strokeStyle = "#ff88ff";
+            ctx.lineWidth = r * 2.5;
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(sp.x - Math.cos(Math.atan2(b.vy || 0, b.vx || 0)) * r * 4, sp.y - Math.sin(Math.atan2(b.vy || 0, b.vx || 0)) * r * 4);
+            ctx.lineTo(sp.x + Math.cos(Math.atan2(b.vy || 0, b.vx || 0)) * r * 4, sp.y + Math.sin(Math.atan2(b.vy || 0, b.vx || 0)) * r * 4);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+            continue;
+        }
+
+        // Bomb: larger circle
+        const drawR = wt === "bomb" ? r * 2 : r * 1.2;
+
+        const bulGrad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, drawR);
+        if (wt === "fast") {
+            bulGrad.addColorStop(0, "#fff");
+            bulGrad.addColorStop(0.3, "#88ff88");
+            bulGrad.addColorStop(1, "#22aa22");
+        } else if (wt === "bomb") {
+            bulGrad.addColorStop(0, "#fff");
+            bulGrad.addColorStop(0.3, "#ff8844");
+            bulGrad.addColorStop(1, "#cc2200");
+        } else if (isMyBullet) {
             bulGrad.addColorStop(0, "#fff");
             bulGrad.addColorStop(0.3, "#ffcc44");
             bulGrad.addColorStop(1, "#ff6600");
@@ -1440,7 +1541,7 @@ function drawBullets() {
         }
         ctx.fillStyle = bulGrad;
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, r * 1.2, 0, Math.PI * 2);
+        ctx.arc(sp.x, sp.y, drawR, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
     }
@@ -1474,6 +1575,169 @@ function drawDashTrails(dt) {
             const size = r * 3;
             ctx.drawImage(trailSprite, sp.x - size / 2, sp.y - size / 2, size, size);
         }
+    }
+    ctx.globalAlpha = 1;
+}
+
+// ============================================
+// RENDERING — Obstacles
+// ============================================
+function drawObstacles() {
+    for (const obs of obstacles) {
+        const sp = arenaToScreen(obs.x, obs.y);
+        const r = obs.r * scaleX;
+
+        // Shadow
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.beginPath();
+        ctx.ellipse(sp.x + 2 * scaleX, sp.y + 3 * scaleX, r, r * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Rock body gradient
+        const rockGrad = ctx.createRadialGradient(sp.x - r * 0.3, sp.y - r * 0.3, 0, sp.x, sp.y, r);
+        rockGrad.addColorStop(0, "#9a9a9a");
+        rockGrad.addColorStop(0.5, "#777777");
+        rockGrad.addColorStop(1, "#555555");
+        ctx.fillStyle = rockGrad;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Highlight
+        ctx.fillStyle = "rgba(255,255,255,0.2)";
+        ctx.beginPath();
+        ctx.arc(sp.x - r * 0.25, sp.y - r * 0.25, r * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Dark edge
+        ctx.strokeStyle = "rgba(0,0,0,0.3)";
+        ctx.lineWidth = 2 * scaleX;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+}
+
+// ============================================
+// RENDERING — Goalkeepers
+// ============================================
+function drawGoalkeepers() {
+    const t = Date.now() / 1000;
+    for (const gk of goalkeepers) {
+        const sp = arenaToScreen(gk.x, gk.y);
+        const r = 18 * scaleX; // GK_RADIUS
+
+        // Pulsing ring
+        ctx.strokeStyle = gk.team === 0 ? "rgba(255,140,40,0.5)" : "rgba(40,140,255,0.5)";
+        ctx.lineWidth = 2 * scaleX;
+        ctx.globalAlpha = 0.4 + Math.sin(t * 4) * 0.2;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r * 1.4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // Body
+        const gkGrad = ctx.createRadialGradient(sp.x - r * 0.2, sp.y - r * 0.2, 0, sp.x, sp.y, r);
+        if (gk.team === 0) {
+            gkGrad.addColorStop(0, "#ffcc66");
+            gkGrad.addColorStop(1, "#ff8822");
+        } else {
+            gkGrad.addColorStop(0, "#88ccff");
+            gkGrad.addColorStop(1, "#2266ff");
+        }
+        ctx.fillStyle = gkGrad;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Border
+        ctx.strokeStyle = "rgba(255,255,255,0.4)";
+        ctx.lineWidth = 2 * scaleX;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // "GK" text
+        ctx.fillStyle = "#fff";
+        ctx.font = `bold ${Math.round(10 * scaleX)}px Orbitron, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("GK", sp.x, sp.y);
+    }
+}
+
+// ============================================
+// RENDERING — Weapons on field
+// ============================================
+function drawWeapons() {
+    const t = Date.now() / 1000;
+    for (const w of weapons) {
+        const sp = arenaToScreen(w.x, w.y);
+        const r = 12 * scaleX;
+
+        // Glow
+        let glowColor, bodyColor;
+        if (w.type === "fast") {
+            glowColor = "#44ff44";
+            bodyColor = "#22cc22";
+        } else if (w.type === "laser") {
+            glowColor = "#ff44ff";
+            bodyColor = "#cc22cc";
+        } else {
+            glowColor = "#ff4444";
+            bodyColor = "#cc2222";
+        }
+
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 12 + Math.sin(t * 5) * 4;
+
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+
+        // Inner highlight
+        ctx.fillStyle = glowColor;
+        ctx.globalAlpha = 0.5 + Math.sin(t * 5) * 0.2;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Label
+        ctx.fillStyle = "#fff";
+        ctx.font = `bold ${Math.round(8 * scaleX)}px Orbitron, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const label = w.type === "fast" ? "F" : w.type === "laser" ? "L" : "B";
+        ctx.fillText(label, sp.x, sp.y);
+    }
+}
+
+// ============================================
+// RENDERING — Bomb explosions (visual)
+// ============================================
+function drawBombExplosions(dt) {
+    for (let i = bombExplosions.length - 1; i >= 0; i--) {
+        const e = bombExplosions[i];
+        e.alpha -= dt * 3;
+        if (e.alpha <= 0) { bombExplosions.splice(i, 1); continue; }
+        const sp = arenaToScreen(e.x, e.y);
+        const r = e.radius * scaleX;
+        ctx.globalAlpha = e.alpha * 0.4;
+        ctx.fillStyle = "#ff4400";
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ffaa00";
+        ctx.lineWidth = 3 * scaleX;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r * e.alpha, 0, Math.PI * 2);
+        ctx.stroke();
     }
     ctx.globalAlpha = 1;
 }
@@ -1537,6 +1801,20 @@ function updateHUD() {
         dashEl.classList.remove("on-cooldown");
     }
 
+    // Weapon indicator
+    const weaponEl = document.getElementById("weapon-indicator");
+    if (weaponEl) {
+        if (me.weapon) {
+            const timer = me.weaponTimer ? (me.weaponTimer / 1000).toFixed(1) : "";
+            const names = { fast: "FAST", laser: "LASER", bomb: "BOMB" };
+            weaponEl.textContent = `${names[me.weapon] || me.weapon} ${timer}s`;
+            weaponEl.classList.remove("hidden");
+            weaponEl.className = `weapon-indicator weapon-${me.weapon}`;
+        } else {
+            weaponEl.classList.add("hidden");
+        }
+    }
+
     // Mobile fire button label
     if (isMobile) {
         const fb = document.getElementById("btn-mobile-fire");
@@ -1568,6 +1846,20 @@ function gameLoop(timestamp) {
         localX = clamp(localX, CFG.PLAYER_RADIUS, CFG.ARENA_W - CFG.PLAYER_RADIUS);
         localY = clamp(localY, CFG.PLAYER_RADIUS, CFG.ARENA_H - CFG.PLAYER_RADIUS);
 
+        // Local obstacle collision prediction
+        for (const obs of obstacles) {
+            const dx = localX - obs.x;
+            const dy = localY - obs.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const minDist = CFG.PLAYER_RADIUS + obs.r;
+            if (dist < minDist && dist > 0) {
+                const nx = dx / dist;
+                const ny = dy / dist;
+                localX = obs.x + nx * minDist;
+                localY = obs.y + ny * minDist;
+            }
+        }
+
         // Interpolate remote player
         const other = 1 - myIndex;
         if (players[other].targetX !== undefined) {
@@ -1597,6 +1889,9 @@ function render(dt) {
     if (gameState === "playing" || gameState === "gameover") {
         drawArena();
         drawGoals();
+        drawObstacles();
+        drawWeapons();
+        drawGoalkeepers();
         drawDashTrails(dt);
 
         // Draw players (remote first, local on top)
@@ -1605,6 +1900,7 @@ function render(dt) {
 
         drawBall();
         drawBullets();
+        drawBombExplosions(dt);
         drawParticles();
         drawAimLine();
 
