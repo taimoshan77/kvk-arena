@@ -47,7 +47,7 @@ const CFG = {
     OVERTIME_DURATION: 60000,  // 1 minute
     RESPAWN_TIME: 3000,        // 3 seconds
     TACKLE_RADIUS: 50,         // dash tackle range
-    KICK_PICKUP_GRACE: 300,    // ms before kicker can re-pick up ball
+    KICK_PICKUP_GRACE: 2000,   // ms before kicker/tackled player can re-pick up ball
 };
 
 // ============================================
