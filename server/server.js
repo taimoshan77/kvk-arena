@@ -295,6 +295,7 @@ function tickRoom(room) {
         const inGoalOpening = ball.y > goal.top && ball.y < goal.bottom;
 
         if (!inGoalOpening) {
+            // Solid wall
             if (ball.x - CFG.BALL_RADIUS < 0) {
                 ball.x = CFG.BALL_RADIUS;
                 ball.vx = Math.abs(ball.vx) * CFG.BALL_BOUNCE_DAMPING;
@@ -303,16 +304,45 @@ function tickRoom(room) {
                 ball.x = CFG.ARENA_W - CFG.BALL_RADIUS;
                 ball.vx = -Math.abs(ball.vx) * CFG.BALL_BOUNCE_DAMPING;
             }
+        } else {
+            // In goal opening — bounce off back wall of goal
+            if (ball.x - CFG.BALL_RADIUS < -CFG.GOAL_DEPTH) {
+                ball.x = -CFG.GOAL_DEPTH + CFG.BALL_RADIUS;
+                ball.vx = Math.abs(ball.vx) * CFG.BALL_BOUNCE_DAMPING;
+            }
+            if (ball.x + CFG.BALL_RADIUS > CFG.ARENA_W + CFG.GOAL_DEPTH) {
+                ball.x = CFG.ARENA_W + CFG.GOAL_DEPTH - CFG.BALL_RADIUS;
+                ball.vx = -Math.abs(ball.vx) * CFG.BALL_BOUNCE_DAMPING;
+            }
+        }
+
+        // Goal post collision — bounce off top/bottom edges of goal opening
+        // Ball approaching goal opening from inside arena and hitting the post
+        if (ball.x - CFG.BALL_RADIUS < 0 || ball.x + CFG.BALL_RADIUS > CFG.ARENA_W) {
+            // Ball is at or past the wall line — check if it hit a goal post
+            if (ball.y - CFG.BALL_RADIUS < goal.top && ball.y + CFG.BALL_RADIUS > goal.top - 10) {
+                // Hit top goal post — bounce down
+                ball.y = goal.top + CFG.BALL_RADIUS;
+                ball.vy = Math.abs(ball.vy) * CFG.BALL_BOUNCE_DAMPING;
+                ball.vx *= CFG.BALL_BOUNCE_DAMPING;
+            }
+            if (ball.y + CFG.BALL_RADIUS > goal.bottom && ball.y - CFG.BALL_RADIUS < goal.bottom + 10) {
+                // Hit bottom goal post — bounce up
+                ball.y = goal.bottom - CFG.BALL_RADIUS;
+                ball.vy = -Math.abs(ball.vy) * CFG.BALL_BOUNCE_DAMPING;
+                ball.vx *= CFG.BALL_BOUNCE_DAMPING;
+            }
         }
 
         // --- Goal detection ---
-        // Left goal (P0 defends): ball enters x < 0 in goal opening → P1 scores
-        if (ball.x < -CFG.GOAL_DEPTH / 2 && inGoalOpening) {
+        // Score when ball center crosses the wall line into the goal opening
+        // Left goal (P0 defends): P1 scores
+        if (ball.x <= 0 && inGoalOpening) {
             scoreGoal(room, 1);
             return;
         }
-        // Right goal (P1 defends): ball enters x > ARENA_W in goal opening → P0 scores
-        if (ball.x > CFG.ARENA_W + CFG.GOAL_DEPTH / 2 && inGoalOpening) {
+        // Right goal (P1 defends): P0 scores
+        if (ball.x >= CFG.ARENA_W && inGoalOpening) {
             scoreGoal(room, 0);
             return;
         }
