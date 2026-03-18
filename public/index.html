@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>K vs K</title>
+    <title>K vs K — Brawl Ball</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
@@ -18,7 +18,7 @@
                 <img src="/assets/kk-top.png" alt="K vs K" class="hero-image">
                 <div class="hero-title-overlay">
                     <h1 class="game-title">K vs K</h1>
-                    <p class="subtitle">1v1 ARENA SHOOTER</p>
+                    <p class="subtitle">BRAWL BALL</p>
                 </div>
             </div>
             <!-- Menu section -->
@@ -31,7 +31,7 @@
                         <button id="btn-join" class="menu-btn primary">JOIN</button>
                     </div>
                 </div>
-                <p class="controls-hint desktop-only">WASD to move — Click to shoot — Shift to dash</p>
+                <p class="controls-hint desktop-only">WASD to move — Click to shoot/kick — Shift to dash/super kick</p>
                 <p class="controls-hint mobile-only">Touch controls enabled</p>
             </div>
         </div>
@@ -51,12 +51,12 @@
             <h2 id="result-title" class="screen-title result-title">YOU WIN!</h2>
             <div class="result-stats">
                 <div class="stat-box">
-                    <div class="stat-label">YOUR HP</div>
-                    <div id="result-my-hp" class="stat-val">0</div>
+                    <div class="stat-label">YOUR GOALS</div>
+                    <div id="result-my-score" class="stat-val">0</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-label">OPPONENT HP</div>
-                    <div id="result-opp-hp" class="stat-val">0</div>
+                    <div class="stat-label">OPPONENT GOALS</div>
+                    <div id="result-opp-score" class="stat-val">0</div>
                 </div>
             </div>
             <button id="btn-restart" class="menu-btn primary">PLAY AGAIN</button>
@@ -70,22 +70,15 @@
         <!-- HUD -->
         <div id="hud" class="hidden">
             <div class="hud-left">
-                <div class="hp-bar-container">
-                    <div class="hp-label">YOU</div>
-                    <div class="hp-bar-bg"><div id="hp-bar-self" class="hp-bar self"></div></div>
-                    <div id="hp-text-self" class="hp-text">100</div>
-                </div>
-            </div>
-            <div class="hud-center">
-                <div id="powerup-indicator" class="powerup-indicator hidden"></div>
                 <div id="dash-indicator" class="dash-indicator">DASH READY</div>
             </div>
+            <div class="hud-center">
+                <div id="score-display" class="score-display">0  -  0</div>
+                <div id="match-timer" class="match-timer">2:00</div>
+                <div id="overtime-indicator" class="overtime-indicator hidden">OVERTIME</div>
+                <div id="ball-indicator" class="ball-indicator hidden">YOU HAVE THE BALL!</div>
+            </div>
             <div class="hud-right">
-                <div class="hp-bar-container">
-                    <div class="hp-label">ENEMY</div>
-                    <div class="hp-bar-bg"><div id="hp-bar-enemy" class="hp-bar enemy"></div></div>
-                    <div id="hp-text-enemy" class="hp-text">100</div>
-                </div>
             </div>
         </div>
 

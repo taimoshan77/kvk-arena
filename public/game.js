@@ -1,5 +1,5 @@
 // ============================================
-// K vs K — Game Client (Brawl Stars Style)
+// K vs K — Brawl Ball Client
 // ============================================
 
 (() => {
@@ -20,9 +20,17 @@ let CFG = {
     FIRE_COOLDOWN: 333,
     DASH_DISTANCE: 150,
     DASH_COOLDOWN: 5000,
-    POWERUP_RADIUS: 15,
-    POWERUP_DURATION: 8000,
     TICK_RATE: 20,
+    BALL_RADIUS: 12,
+    BALL_PICKUP_RADIUS: 30,
+    BALL_KICK_SPEED: 500,
+    BALL_SUPER_KICK_SPEED: 700,
+    GOAL_WIDTH: 120,
+    GOAL_DEPTH: 30,
+    GOALS_TO_WIN: 2,
+    MATCH_DURATION: 120000,
+    OVERTIME_DURATION: 60000,
+    RESPAWN_TIME: 3000,
 };
 
 // ============================================
@@ -70,18 +78,31 @@ const SFX = {
     shoot() { this._osc("square", 660, 220, 0.08, 0.07); },
     hit() { this._osc("sawtooth", 200, 60, 0.12, 0.1); this._noise(0.08, 0.08, 1000); },
     dash() { this._osc("sine", 220, 880, 0.12, 0.08); },
-    powerup() {
+    kick() { this._osc("triangle", 120, 60, 0.15, 0.15); this._noise(0.06, 0.06, 600); },
+    goal() {
         const c = this._ensureCtx();
         [523, 659, 784, 1047].forEach((freq, i) => {
             const o = c.createOscillator();
             const g = c.createGain();
             o.type = "sine"; o.frequency.value = freq;
-            const t = c.currentTime + i * 0.06;
-            g.gain.setValueAtTime(0.08, t);
-            g.gain.linearRampToValueAtTime(0, t + 0.1);
+            const t = c.currentTime + i * 0.08;
+            g.gain.setValueAtTime(0.12, t);
+            g.gain.linearRampToValueAtTime(0, t + 0.15);
             o.connect(g).connect(c.destination);
-            o.start(t); o.stop(t + 0.1);
+            o.start(t); o.stop(t + 0.15);
         });
+    },
+    respawn() {
+        const c = this._ensureCtx();
+        const o = c.createOscillator();
+        const g = c.createGain();
+        o.type = "sine";
+        o.frequency.setValueAtTime(200, c.currentTime);
+        o.frequency.linearRampToValueAtTime(800, c.currentTime + 0.2);
+        g.gain.setValueAtTime(0.08, c.currentTime);
+        g.gain.linearRampToValueAtTime(0, c.currentTime + 0.25);
+        o.connect(g).connect(c.destination);
+        o.start(); o.stop(c.currentTime + 0.25);
     },
     win() {
         const c = this._ensureCtx();
@@ -113,7 +134,7 @@ const SFX = {
 };
 
 // ============================================
-// MUSIC — Audio file BGM (CC0 "Urban Boss Battle")
+// MUSIC — Audio file BGM
 // ============================================
 const Music = {
     audio: null,
@@ -124,7 +145,6 @@ const Music = {
         SFX._ensureCtx();
         if (!this.audio) {
             this.audio = new Audio();
-            // Try OGG first, fallback to MP3
             const canOgg = this.audio.canPlayType("audio/ogg; codecs=vorbis");
             this.audio.src = canOgg ? "/assets/bgm.ogg" : "/assets/bgm.mp3";
             this.audio.loop = true;
@@ -163,18 +183,24 @@ let socket = null;
 
 // Game entities (from server)
 let players = [
-    { x: 200, y: 450, hp: 100, alive: true, powerup: null, dashCooldown: 0 },
-    { x: 600, y: 150, hp: 100, alive: true, powerup: null, dashCooldown: 0 },
+    { x: 150, y: 300, hp: 100, alive: true, hasBall: false, dashCooldown: 0, respawnTimer: 0 },
+    { x: 650, y: 300, hp: 100, alive: true, hasBall: false, dashCooldown: 0, respawnTimer: 0 },
 ];
 let bullets = [];
-let powerups = [];
+
+// Brawl Ball state
+let ball = { x: 400, y: 300, vx: 0, vy: 0, carrier: -1 };
+let score = [0, 0];
+let matchTimer = 120000;
+let overtime = false;
+let goalFlash = 0; // screen flash on goal
 
 // Local input
 const keys = {};
 const mobileInput = { dx: 0, dy: 0, fire: false, dash: false };
 
 // Local movement prediction
-let localX = 200, localY = 450;
+let localX = 150, localY = 300;
 let localVx = 0, localVy = 0;
 
 // Interpolation
@@ -183,14 +209,13 @@ let currState = null;
 let stateTime = 0;
 const INTERP_DELAY = 50; // ms
 
-// Sprites (directional: front, back, left, right)
+// Sprites (directional)
 const sprites = {
-    k1: null, k2: null, // legacy (title screen)
+    k1: null, k2: null,
     k1_front: null, k1_back: null, k1_left: null, k1_right: null,
     k2_front: null, k2_back: null, k2_left: null, k2_right: null,
 };
 let spritesLoaded = 0;
-// Track each player's facing direction
 let playerDir = ["front", "front"];
 
 // Particles
@@ -198,15 +223,15 @@ const particlePool = [];
 const activeParticles = [];
 
 // Animation state
-let hitFlash = [0, 0]; // flash timer per player
-let dashTrail = [];     // {x, y, alpha, index}
-let moveTime = 0;       // for bounce animation
+let hitFlash = [0, 0];
+let dashTrail = [];
+let moveTime = 0;
 
 // Aiming
 let aimAngle = 0;
 let mouseX = 0, mouseY = 0;
 
-// Arena decorations (generated once)
+// Arena decorations
 let arenaDecorations = [];
 
 // Confetti
@@ -237,7 +262,6 @@ function resize() {
     canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Fit arena (800x600) into viewport with letterboxing
     const arenaAspect = CFG.ARENA_W / CFG.ARENA_H;
     const screenAspect = W / H;
     if (screenAspect > arenaAspect) {
@@ -278,17 +302,22 @@ function showError(msg) {
     setTimeout(() => el.classList.add("hidden"), 3000);
 }
 
+function formatTime(ms) {
+    const totalSec = Math.max(0, Math.ceil(ms / 1000));
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${sec.toString().padStart(2, "0")}`;
+}
+
 // ============================================
 // SPRITES
 // ============================================
 function loadSprites() {
-    // Title screen sprites
     ["k1", "k2"].forEach(name => {
         const img = new Image();
         img.onload = () => { sprites[name] = img; spritesLoaded++; };
         img.src = `/assets/${name}.png`;
     });
-    // Directional 3D sprites
     const dirs = ["front", "back", "left", "right"];
     ["k1", "k2"].forEach(name => {
         dirs.forEach(dir => {
@@ -304,11 +333,9 @@ function loadSprites() {
 // ============================================
 function generateDecorations() {
     arenaDecorations = [];
-    // Bushes in clusters (corners and edges, away from center)
     for (let i = 0; i < 8; i++) {
         const margin = 60;
         let x, y;
-        // Place near edges, avoid center area
         do {
             x = margin + Math.random() * (CFG.ARENA_W - margin * 2);
             y = margin + Math.random() * (CFG.ARENA_H - margin * 2);
@@ -320,7 +347,6 @@ function generateDecorations() {
             shade: Math.random() * 0.3,
         });
     }
-    // Crates (scattered)
     for (let i = 0; i < 6; i++) {
         arenaDecorations.push({
             type: "crate",
@@ -470,11 +496,15 @@ function connectSocket() {
 
         // Reset state
         players = [
-            { x: 200, y: 450, hp: CFG.PLAYER_HP, alive: true, powerup: null, dashCooldown: 0 },
-            { x: 600, y: 150, hp: CFG.PLAYER_HP, alive: true, powerup: null, dashCooldown: 0 },
+            { x: 150, y: 300, hp: CFG.PLAYER_HP, alive: true, hasBall: false, dashCooldown: 0, respawnTimer: 0 },
+            { x: 650, y: 300, hp: CFG.PLAYER_HP, alive: true, hasBall: false, dashCooldown: 0, respawnTimer: 0 },
         ];
         bullets = [];
-        powerups = [];
+        ball = { x: CFG.ARENA_W / 2, y: CFG.ARENA_H / 2, vx: 0, vy: 0, carrier: -1 };
+        score = [0, 0];
+        matchTimer = CFG.MATCH_DURATION;
+        overtime = false;
+        goalFlash = 0;
         hitFlash = [0, 0];
         dashTrail = [];
         activeParticles.length = 0;
@@ -494,10 +524,9 @@ function connectSocket() {
         document.getElementById("hud").classList.remove("hidden");
         if (isMobile) document.getElementById("mobile-controls").classList.remove("hidden");
 
-        notify("FIGHT!", "big");
+        notify("KICK OFF!", "big");
         resize();
 
-        // Start background music
         Music.start();
     });
 
@@ -510,8 +539,9 @@ function connectSocket() {
             const sp = state.players[i];
             players[i].hp = sp.hp;
             players[i].alive = sp.alive;
-            players[i].powerup = sp.powerup;
+            players[i].hasBall = sp.hasBall;
             players[i].dashCooldown = sp.dashCooldown;
+            players[i].respawnTimer = sp.respawnTimer;
 
             if (i !== myIndex) {
                 players[i].targetX = sp.x;
@@ -535,6 +565,12 @@ function connectSocket() {
         }
 
         bullets = state.bullets;
+
+        // Update ball
+        ball = state.ball;
+        score = state.score;
+        matchTimer = state.matchTimer;
+        overtime = state.overtime;
     });
 
     socket.on("player_hit", (data) => {
@@ -547,22 +583,70 @@ function connectSocket() {
         }
     });
 
-    socket.on("powerup_spawn", (pu) => {
-        powerups.push(pu);
+    socket.on("player_killed", (data) => {
+        spawnExplosion(players[data.player].x, players[data.player].y, "#ff0044", 24);
+        if (data.player === myIndex) {
+            notify("ELIMINATED!", "hit");
+        } else {
+            notify("ENEMY DOWN!", "dash");
+        }
     });
 
-    socket.on("powerup_pickup", (data) => {
-        powerups = powerups.filter(p => p.id !== data.id);
-        SFX.powerup();
+    socket.on("player_respawn", (data) => {
+        SFX.respawn();
+        players[data.player].x = data.x;
+        players[data.player].y = data.y;
         if (data.player === myIndex) {
-            const labels = { speed: "SPEED BOOST!", rapid: "RAPID FIRE!", health: "+30 HP!" };
-            notify(labels[data.type] || data.type, "powerup");
+            localX = data.x;
+            localY = data.y;
+            localVx = 0;
+            localVy = 0;
+            notify("RESPAWNED!", "dash");
         }
+        // Spawn ring effect
+        for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            spawnParticle(data.x, data.y, Math.cos(angle) * 60, Math.sin(angle) * 60,
+                0.5, "#44ffff", 3);
+        }
+    });
+
+    socket.on("ball_pickup", (data) => {
+        if (data.player === myIndex) {
+            SFX.kick();
+        }
+    });
+
+    socket.on("ball_kicked", (data) => {
+        SFX.kick();
+        spawnSparkle(players[data.player].x, players[data.player].y, "#ffd700");
+    });
+
+    socket.on("ball_super_kicked", (data) => {
+        SFX.kick();
+        SFX.dash();
+        spawnExplosion(players[data.player].x, players[data.player].y, "#ffd700", 12);
+        if (data.player === myIndex) {
+            notify("SUPER KICK!", "powerup");
+        }
+    });
+
+    socket.on("goal_scored", (data) => {
+        SFX.goal();
+        score = data.score;
+        goalFlash = 1.0;
+        notify("GOAL!", "big");
+        // Big explosion at ball position
+        spawnExplosion(ball.x, ball.y, "#ffd700", 30);
+    });
+
+    socket.on("overtime_start", () => {
+        overtime = true;
+        notify("OVERTIME!", "big");
     });
 
     socket.on("player_dash", (data) => {
         SFX.dash();
-        // Rainbow dash trail
         const rainbowColors = ["#ff4444", "#ff8800", "#ffdd00", "#44ff44", "#4488ff", "#aa44ff"];
         for (let i = 0; i < 8; i++) {
             dashTrail.push({
@@ -585,17 +669,30 @@ function connectSocket() {
     socket.on("game_over", (data) => {
         gameState = "gameover";
         const isWinner = data.winner === myIndex;
+        const isDraw = data.winner === -1;
 
         Music.stop();
 
-        if (isWinner) { SFX.win(); } else { SFX.lose(); }
+        if (isDraw) {
+            SFX.lose();
+        } else if (isWinner) {
+            SFX.win();
+        } else {
+            SFX.lose();
+        }
 
         const titleEl = document.getElementById("result-title");
-        titleEl.textContent = isWinner ? "YOU WIN!" : "YOU LOSE";
-        titleEl.className = "screen-title result-title " + (isWinner ? "win" : "lose");
+        if (isDraw) {
+            titleEl.textContent = "DRAW!";
+            titleEl.className = "screen-title result-title";
+        } else {
+            titleEl.textContent = isWinner ? "YOU WIN!" : "YOU LOSE";
+            titleEl.className = "screen-title result-title " + (isWinner ? "win" : "lose");
+        }
 
-        document.getElementById("result-my-hp").textContent = Math.max(0, Math.round(players[myIndex].hp));
-        document.getElementById("result-opp-hp").textContent = Math.max(0, Math.round(players[1 - myIndex].hp));
+        const finalScore = data.score || score;
+        document.getElementById("result-my-score").textContent = finalScore[myIndex];
+        document.getElementById("result-opp-score").textContent = finalScore[1 - myIndex];
         document.getElementById("restart-status").classList.add("hidden");
 
         document.getElementById("hud").classList.add("hidden");
@@ -613,8 +710,8 @@ function connectSocket() {
             const titleEl = document.getElementById("result-title");
             titleEl.textContent = "YOU WIN!";
             titleEl.className = "screen-title result-title win";
-            document.getElementById("result-my-hp").textContent = Math.round(players[myIndex].hp);
-            document.getElementById("result-opp-hp").textContent = "DC";
+            document.getElementById("result-my-score").textContent = score[myIndex];
+            document.getElementById("result-opp-score").textContent = "DC";
             document.getElementById("hud").classList.add("hidden");
             document.getElementById("mobile-controls").classList.add("hidden");
             showScreen("gameover-screen");
@@ -778,6 +875,15 @@ fireBtn.addEventListener("touchend", () => {
 
 function fireMobileShot() {
     if (!socket || gameState !== "playing") return;
+    // If carrying ball, kick toward opponent goal
+    if (players[myIndex].hasBall) {
+        const targetX = myIndex === 0 ? CFG.ARENA_W : 0;
+        const targetY = CFG.ARENA_H / 2;
+        const angle = Math.atan2(targetY - localY, targetX - localX);
+        socket.emit("player_shoot", { angle });
+        return;
+    }
+    // Otherwise shoot at opponent
     const opp = players[1 - myIndex];
     const angle = Math.atan2(opp.y - localY, opp.x - localX);
     socket.emit("player_shoot", { angle });
@@ -815,8 +921,7 @@ function sendInput() {
 
     socket.emit("player_input", { dx, dy, seq: ++inputSeq });
 
-    let speed = CFG.PLAYER_SPEED;
-    if (players[myIndex].powerup === "speed") speed *= 1.5;
+    const speed = CFG.PLAYER_SPEED;
     localVx = dx * speed;
     localVy = dy * speed;
 }
@@ -827,7 +932,7 @@ function sendInput() {
 function drawArena() {
     const t = Date.now() / 1000;
 
-    // Colorful background outside arena (Brawl Stars blue/purple)
+    // Background outside arena
     const outerGrad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
     outerGrad.addColorStop(0, "#2a1850");
     outerGrad.addColorStop(1, "#0a0820");
@@ -839,17 +944,17 @@ function drawArena() {
     const aw = br.x - tl.x;
     const ah = br.y - tl.y;
 
-    // Sandy/grass floor — Brawl Stars warm palette
+    // Grass floor
     const grassGrad = ctx.createLinearGradient(tl.x, tl.y, br.x, br.y);
     grassGrad.addColorStop(0, "#5a9944");
     grassGrad.addColorStop(0.3, "#4a8838");
-    grassGrad.addColorStop(0.5, "#d4a853"); // sandy center path
+    grassGrad.addColorStop(0.5, "#4a8838");
     grassGrad.addColorStop(0.7, "#4a8838");
     grassGrad.addColorStop(1, "#5a9944");
     ctx.fillStyle = grassGrad;
     ctx.fillRect(tl.x, tl.y, aw, ah);
 
-    // Checkerboard grass tiles (alternating greens)
+    // Checkerboard grass tiles
     ctx.globalAlpha = 0.1;
     const tileSize = 40 * scaleX;
     for (let gx = 0; gx < CFG.ARENA_W; gx += 40) {
@@ -863,26 +968,30 @@ function drawArena() {
     }
     ctx.globalAlpha = 1;
 
-    // Center diamond decoration (like Brawl Stars maps)
-    const cx = tl.x + aw / 2;
-    const cy = tl.y + ah / 2;
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = "#ffd700";
+    // Center line
+    const centerSp = arenaToScreen(CFG.ARENA_W / 2, 0);
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 2 * scaleX;
+    ctx.setLineDash([8 * scaleX, 8 * scaleX]);
     ctx.beginPath();
-    ctx.moveTo(cx, cy - 80 * scaleY);
-    ctx.lineTo(cx + 80 * scaleX, cy);
-    ctx.lineTo(cx, cy + 80 * scaleY);
-    ctx.lineTo(cx - 80 * scaleX, cy);
-    ctx.closePath();
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.moveTo(centerSp.x, tl.y);
+    ctx.lineTo(centerSp.x, br.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
-    // Decorations (bushes, rocks, flowers, crates)
+    // Center circle
+    const cc = arenaToScreen(CFG.ARENA_W / 2, CFG.ARENA_H / 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 2 * scaleX;
+    ctx.beginPath();
+    ctx.arc(cc.x, cc.y, 60 * scaleX, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Decorations
     for (const d of arenaDecorations) {
         const sp = arenaToScreen(d.x, d.y);
         const sz = d.size * scaleX;
         if (d.type === "bush") {
-            // Multi-layered bush
             ctx.fillStyle = "#2d6b1e";
             ctx.beginPath();
             ctx.arc(sp.x, sp.y + sz * 0.15, sz, 0, Math.PI * 2);
@@ -895,19 +1004,16 @@ function drawArena() {
             ctx.beginPath();
             ctx.arc(sp.x - sz * 0.2, sp.y - sz * 0.25, sz * 0.5, 0, Math.PI * 2);
             ctx.fill();
-            // Highlight dot
             ctx.fillStyle = "rgba(255,255,255,0.15)";
             ctx.beginPath();
             ctx.arc(sp.x - sz * 0.25, sp.y - sz * 0.35, sz * 0.2, 0, Math.PI * 2);
             ctx.fill();
         } else {
-            // Crate/rock with Brawl Stars style
             const hw = sz * 0.6;
             ctx.fillStyle = "#8b6f47";
             ctx.fillRect(sp.x - hw, sp.y - hw, hw * 2, hw * 2);
             ctx.fillStyle = "#a0824e";
             ctx.fillRect(sp.x - hw + 2, sp.y - hw + 2, hw * 2 - 4, hw - 2);
-            // X on crate
             ctx.strokeStyle = "#6b5230";
             ctx.lineWidth = 2;
             ctx.beginPath();
@@ -919,31 +1025,65 @@ function drawArena() {
         }
     }
 
-    // Thick 3D beveled wall border (Brawl Stars blue walls)
+    // Walls — with goal openings
+    drawWalls(tl, br, aw, ah);
+
+    // Vignette
+    ctx.globalAlpha = 0.3;
+    const vigGrad = ctx.createRadialGradient(
+        tl.x + aw / 2, tl.y + ah / 2, Math.min(aw, ah) * 0.4,
+        tl.x + aw / 2, tl.y + ah / 2, Math.max(aw, ah) * 0.7
+    );
+    vigGrad.addColorStop(0, "rgba(0,0,0,0)");
+    vigGrad.addColorStop(1, "rgba(0,0,0,0.5)");
+    ctx.fillStyle = vigGrad;
+    ctx.fillRect(tl.x, tl.y, aw, ah);
+    ctx.globalAlpha = 1;
+}
+
+// ============================================
+// RENDERING — Walls with Goal Openings
+// ============================================
+function drawWalls(tl, br, aw, ah) {
     const wallW = 10 * scaleX;
-    // Outer wall (dark blue)
+    const goalTop = (CFG.ARENA_H - CFG.GOAL_WIDTH) / 2;
+    const goalBottom = goalTop + CFG.GOAL_WIDTH;
+    const gtScreen = arenaToScreen(0, goalTop);
+    const gbScreen = arenaToScreen(0, goalBottom);
+    const goalTopY = gtScreen.y;
+    const goalBottomY = gbScreen.y;
+
+    // Top wall (full width)
     ctx.fillStyle = "#1a3a6a";
     ctx.fillRect(tl.x - wallW, tl.y - wallW, aw + wallW * 2, wallW);
-    ctx.fillRect(tl.x - wallW, br.y, aw + wallW * 2, wallW);
-    ctx.fillRect(tl.x - wallW, tl.y, wallW, ah);
-    ctx.fillRect(br.x, tl.y, wallW, ah);
-    // Mid wall (medium blue)
-    const wallW2 = 5 * scaleX;
     ctx.fillStyle = "#2a5a9a";
-    ctx.fillRect(tl.x - wallW2, tl.y - wallW2, aw + wallW2 * 2, wallW2);
-    ctx.fillRect(tl.x - wallW2, br.y, aw + wallW2 * 2, wallW2);
-    ctx.fillRect(tl.x - wallW2, tl.y, wallW2, ah);
-    ctx.fillRect(br.x, tl.y, wallW2, ah);
-    // Inner highlight
+    ctx.fillRect(tl.x - wallW / 2, tl.y - wallW / 2, aw + wallW, wallW / 2);
+
+    // Bottom wall (full width)
+    ctx.fillStyle = "#1a3a6a";
+    ctx.fillRect(tl.x - wallW, br.y, aw + wallW * 2, wallW);
+    ctx.fillStyle = "#2a5a9a";
+    ctx.fillRect(tl.x - wallW / 2, br.y, aw + wallW, wallW / 2);
+
+    // Left wall — with goal gap
+    ctx.fillStyle = "#1a3a6a";
+    // Top portion
+    ctx.fillRect(tl.x - wallW, tl.y, wallW, goalTopY - tl.y);
+    // Bottom portion
+    ctx.fillRect(tl.x - wallW, goalBottomY, wallW, br.y - goalBottomY);
+
+    // Right wall — with goal gap
+    ctx.fillStyle = "#1a3a6a";
+    ctx.fillRect(br.x, tl.y, wallW, goalTopY - tl.y);
+    ctx.fillRect(br.x, goalBottomY, wallW, br.y - goalBottomY);
+
+    // Inner highlights
     ctx.fillStyle = "#4a8acc";
     ctx.fillRect(tl.x, tl.y, aw, 3 * scaleY);
-    ctx.fillRect(tl.x, tl.y, 3 * scaleX, ah);
-    // Inner shadow
     ctx.fillStyle = "rgba(0,0,0,0.25)";
     ctx.fillRect(tl.x, br.y - 3 * scaleY, aw, 3 * scaleY);
-    ctx.fillRect(br.x - 3 * scaleX, tl.y, 3 * scaleX, ah);
 
-    // Corner bolts (gold circles at corners — Brawl Stars style)
+    // Corner bolts
     const boltR = 6 * scaleX;
     const corners = [[tl.x, tl.y], [br.x, tl.y], [tl.x, br.y], [br.x, br.y]];
     for (const [cx, cy] of corners) {
@@ -959,84 +1099,171 @@ function drawArena() {
         ctx.fill();
         ctx.shadowBlur = 0;
     }
+}
 
-    // Vignette around edges
-    ctx.globalAlpha = 0.3;
-    const vigGrad = ctx.createRadialGradient(
-        tl.x + aw / 2, tl.y + ah / 2, Math.min(aw, ah) * 0.4,
-        tl.x + aw / 2, tl.y + ah / 2, Math.max(aw, ah) * 0.7
-    );
-    vigGrad.addColorStop(0, "rgba(0,0,0,0)");
-    vigGrad.addColorStop(1, "rgba(0,0,0,0.5)");
-    ctx.fillStyle = vigGrad;
-    ctx.fillRect(tl.x, tl.y, aw, ah);
+// ============================================
+// RENDERING — Goals
+// ============================================
+function drawGoals() {
+    const goalTop = (CFG.ARENA_H - CFG.GOAL_WIDTH) / 2;
+    const goalBottom = goalTop + CFG.GOAL_WIDTH;
+    const depth = CFG.GOAL_DEPTH;
+
+    // Left goal (P0 defends) — orange tint
+    drawGoal(0, goalTop, goalBottom, depth, "rgba(255,140,40,", -1);
+    // Right goal (P1 defends) — blue tint
+    drawGoal(CFG.ARENA_W, goalTop, goalBottom, depth, "rgba(40,140,255,", 1);
+}
+
+function drawGoal(wallX, goalTop, goalBottom, depth, colorBase, dir) {
+    // dir: -1 = left goal (extends left), 1 = right goal (extends right)
+    const gt = arenaToScreen(wallX, goalTop);
+    const gb = arenaToScreen(wallX, goalBottom);
+    const goalDepthPx = depth * scaleX;
+    const goalWidthPx = gb.y - gt.y;
+
+    // Goal area fill (net background)
+    const gx = dir === -1 ? gt.x - goalDepthPx : gt.x;
+    ctx.fillStyle = colorBase + "0.15)";
+    ctx.fillRect(gx, gt.y, goalDepthPx, goalWidthPx);
+
+    // Net pattern (horizontal lines)
+    ctx.strokeStyle = colorBase + "0.25)";
+    ctx.lineWidth = 1;
+    const netSpacing = 10 * scaleY;
+    for (let y = gt.y; y <= gb.y; y += netSpacing) {
+        ctx.beginPath();
+        ctx.moveTo(gx, y);
+        ctx.lineTo(gx + goalDepthPx, y);
+        ctx.stroke();
+    }
+    // Vertical lines
+    const vNetSpacing = 10 * scaleX;
+    for (let x = gx; x <= gx + goalDepthPx; x += vNetSpacing) {
+        ctx.beginPath();
+        ctx.moveTo(x, gt.y);
+        ctx.lineTo(x, gb.y);
+        ctx.stroke();
+    }
+
+    // Goal posts (white thick lines at top and bottom of opening)
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 4 * scaleX;
+    ctx.shadowColor = "#ffffff";
+    ctx.shadowBlur = 8;
+
+    // Top post
+    ctx.beginPath();
+    ctx.moveTo(gt.x, gt.y);
+    ctx.lineTo(gx, gt.y);
+    ctx.stroke();
+
+    // Bottom post
+    ctx.beginPath();
+    ctx.moveTo(gb.x, gb.y);
+    ctx.lineTo(gx, gb.y);
+    ctx.stroke();
+
+    // Back post
+    ctx.beginPath();
+    ctx.moveTo(gx, gt.y);
+    ctx.lineTo(gx, gb.y);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+
+    // Goal glow
+    ctx.globalAlpha = 0.1 + Math.sin(Date.now() / 500) * 0.05;
+    ctx.fillStyle = colorBase + "0.3)";
+    ctx.fillRect(gx, gt.y, goalDepthPx, goalWidthPx);
     ctx.globalAlpha = 1;
 }
 
 // ============================================
-// RENDERING — Powerups (colorful, bouncing, spinning)
+// RENDERING — Ball
 // ============================================
-function drawPowerups() {
+function drawBall() {
     const t = Date.now() / 1000;
-    for (const pu of powerups) {
-        const sp = arenaToScreen(pu.x, pu.y);
-        const r = CFG.POWERUP_RADIUS * scaleX;
-        const bob = Math.sin(t * 3 + pu.id) * 4 * scaleY;
-        const spin = t * 2 + pu.id;
 
-        ctx.save();
-        ctx.translate(sp.x, sp.y + bob);
+    if (ball.carrier !== -1) {
+        // Ball is carried — draw golden ring around carrier
+        const carrierIdx = ball.carrier;
+        const isMe = carrierIdx === myIndex;
+        const px = isMe ? localX : players[carrierIdx].x;
+        const py = isMe ? localY : players[carrierIdx].y;
+        const sp = arenaToScreen(px, py);
+        const r = CFG.PLAYER_RADIUS * scaleX;
 
-        const colors = { speed: "#00ccff", rapid: "#ff4488", health: "#44ff88" };
-        const color = colors[pu.type] || "#ffd700";
-
-        // Sparkle particles
-        if (Math.random() < 0.15) {
-            spawnSparkle(pu.x + (Math.random() - 0.5) * 20, pu.y + (Math.random() - 0.5) * 20, color);
-        }
-
-        // Glow ring
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 20;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.globalAlpha = 0.3 + Math.sin(t * 4) * 0.15;
+        ctx.strokeStyle = "#ffd700";
+        ctx.lineWidth = 3 * scaleX;
+        ctx.shadowColor = "#ffd700";
+        ctx.shadowBlur = 12;
+        ctx.globalAlpha = 0.6 + Math.sin(t * 6) * 0.2;
         ctx.beginPath();
-        ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2);
+        ctx.arc(sp.x, sp.y, r * 1.4, 0, Math.PI * 2);
         ctx.stroke();
-
-        // Spinning outer ring
-        ctx.globalAlpha = 0.2;
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 1.3, spin, spin + Math.PI * 1.2);
-        ctx.stroke();
-
-        // Main circle
-        ctx.globalAlpha = 1;
-        const puGrad = ctx.createRadialGradient(0, -r * 0.3, 0, 0, 0, r);
-        puGrad.addColorStop(0, "#fff");
-        puGrad.addColorStop(0.4, color);
-        puGrad.addColorStop(1, color);
-        ctx.fillStyle = puGrad;
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Icon
-        ctx.fillStyle = "#fff";
-        ctx.font = `bold ${13 * scaleX}px Orbitron`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        const icons = { speed: "S", rapid: "R", health: "+" };
-        ctx.fillText(icons[pu.type] || "?", 0, 0);
-
         ctx.shadowBlur = 0;
-        ctx.restore();
+        ctx.globalAlpha = 1;
+        return;
     }
+
+    // Free ball
+    const sp = arenaToScreen(ball.x, ball.y);
+    const r = CFG.BALL_RADIUS * scaleX;
+    const speed = Math.hypot(ball.vx, ball.vy);
+
+    // Speed trail particles
+    if (speed > 50 && Math.random() < 0.5) {
+        spawnParticle(ball.x + (Math.random() - 0.5) * 6, ball.y + (Math.random() - 0.5) * 6,
+            -ball.vx * 0.1 + (Math.random() - 0.5) * 20, -ball.vy * 0.1 + (Math.random() - 0.5) * 20,
+            0.2 + Math.random() * 0.15, "#ffd700", 1.5 + Math.random() * 1.5);
+    }
+
+    // Shadow
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.beginPath();
+    ctx.ellipse(sp.x, sp.y + r * 0.6, r * 0.9, r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Glow
+    ctx.shadowColor = "#ffd700";
+    ctx.shadowBlur = 15;
+
+    // Ball body — white/gold soccer ball
+    const ballGrad = ctx.createRadialGradient(sp.x - r * 0.3, sp.y - r * 0.3, 0, sp.x, sp.y, r);
+    ballGrad.addColorStop(0, "#ffffff");
+    ballGrad.addColorStop(0.5, "#fff8e0");
+    ballGrad.addColorStop(1, "#ffd700");
+    ctx.fillStyle = ballGrad;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pentagon pattern on ball
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 1;
+    const spin = t * 3;
+    for (let i = 0; i < 5; i++) {
+        const angle = spin + (i / 5) * Math.PI * 2;
+        const px = sp.x + Math.cos(angle) * r * 0.5;
+        const py = sp.y + Math.sin(angle) * r * 0.5;
+        ctx.beginPath();
+        ctx.arc(px, py, r * 0.25, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // Highlight
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.beginPath();
+    ctx.arc(sp.x - r * 0.25, sp.y - r * 0.25, r * 0.3, 0, Math.PI * 2);
+    ctx.fill();
 }
 
 // ============================================
-// RENDERING — Player (3D-like with shadows, glow, bounce)
+// RENDERING — Player
 // ============================================
 function drawPlayer(index) {
     const isMe = index === myIndex;
@@ -1044,17 +1271,31 @@ function drawPlayer(index) {
     const py = isMe ? localY : players[index].y;
     const p = players[index];
 
-    if (!p.alive) return;
+    if (!p.alive) {
+        // Draw gray X at death position
+        const sp = arenaToScreen(px, py);
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = "#888";
+        ctx.lineWidth = 3 * scaleX;
+        const sz = CFG.PLAYER_RADIUS * scaleX * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(sp.x - sz, sp.y - sz);
+        ctx.lineTo(sp.x + sz, sp.y + sz);
+        ctx.moveTo(sp.x + sz, sp.y - sz);
+        ctx.lineTo(sp.x - sz, sp.y + sz);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        return;
+    }
 
     const sp = arenaToScreen(px, py);
     const r = CFG.PLAYER_RADIUS * scaleX;
     const t = Date.now() / 1000;
 
-    // Check if moving
     const isMoving = isMe ? (Math.abs(localVx) > 1 || Math.abs(localVy) > 1) : false;
     if (isMoving) moveTime += 0.05;
 
-    // 1) Drop shadow on ground
+    // Drop shadow
     ctx.save();
     ctx.globalAlpha = 0.3;
     ctx.fillStyle = "rgba(0,0,0,0.5)";
@@ -1063,7 +1304,7 @@ function drawPlayer(index) {
     ctx.fill();
     ctx.restore();
 
-    // 2) Colored glow ring on ground
+    // Glow ring
     ctx.save();
     const glowColor = index === 0 ? "rgba(255, 102, 34, 0.4)" : "rgba(0, 136, 255, 0.4)";
     ctx.globalAlpha = 0.3 + Math.sin(t * 3) * 0.1;
@@ -1077,21 +1318,17 @@ function drawPlayer(index) {
     ctx.save();
     ctx.translate(sp.x, sp.y);
 
-    // Hit flash
     if (hitFlash[index] > 0) {
         ctx.globalAlpha = 0.5 + Math.sin(hitFlash[index] * 30) * 0.5;
     }
 
-    // Bounce animation when moving
     const bounceY = isMoving ? Math.sin(moveTime * 8) * 3 * scaleY : 0;
     const bounceScale = isMoving ? 1 + Math.sin(moveTime * 8) * 0.04 : 1;
-
-    // Idle bob
     const bob = Math.sin(t * 2.5 + index * Math.PI) * 2 * scaleY;
     ctx.translate(0, bob + bounceY);
     ctx.scale(bounceScale, bounceScale);
 
-    // Determine facing direction from velocity
+    // Facing direction
     const base = index === 0 ? "k1" : "k2";
     let vx = 0, vy = 0;
     if (isMe) {
@@ -1108,7 +1345,6 @@ function drawPlayer(index) {
         }
     }
 
-    // Use directional 3D sprite, fallback to legacy
     const dirSprite = sprites[`${base}_${playerDir[index]}`];
     const legacySprite = sprites[base];
     const activeSprite = dirSprite || legacySprite;
@@ -1117,7 +1353,6 @@ function drawPlayer(index) {
         const size = r * 3;
         ctx.drawImage(activeSprite, -size / 2, -size / 2, size, size);
     } else {
-        // Fallback: colorful circle with gradient
         const fallGrad = ctx.createRadialGradient(0, -r * 0.3, 0, 0, 0, r);
         if (index === 0) {
             fallGrad.addColorStop(0, "#ffaa44");
@@ -1132,39 +1367,22 @@ function drawPlayer(index) {
         ctx.fill();
     }
 
-    // Powerup aura
-    if (p.powerup) {
-        const auraColors = { speed: "#00ccff", rapid: "#ff4488" };
-        const auraColor = auraColors[p.powerup] || "#ffd700";
-        ctx.strokeStyle = auraColor;
-        ctx.lineWidth = 3;
-        ctx.globalAlpha = 0.4 + Math.sin(t * 6) * 0.2;
-        ctx.shadowColor = auraColor;
-        ctx.shadowBlur = 15;
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-    }
-
     ctx.restore();
 
-    // Health bar above player (bigger, with gradient bg)
+    // Health bar (smaller)
     ctx.globalAlpha = 1;
-    const hpW = 50 * scaleX;
-    const hpH = 6 * scaleY;
+    const hpW = 36 * scaleX;
+    const hpH = 4 * scaleY;
     const hpX = sp.x - hpW / 2;
-    const hpY = sp.y - r * 1.5 - 10 * scaleY + bob;
+    const hpY = sp.y - r * 1.5 - 8 * scaleY + (Math.sin(t * 2.5 + index * Math.PI) * 2 * scaleY);
     const hpFrac = Math.max(0, p.hp / CFG.PLAYER_HP);
 
-    // Background
     ctx.fillStyle = "rgba(0,0,0,0.5)";
-    const hpBorderR = 3 * scaleX;
+    const hpBorderR = 2 * scaleX;
     ctx.beginPath();
     ctx.roundRect(hpX - 1, hpY - 1, hpW + 2, hpH + 2, hpBorderR);
     ctx.fill();
 
-    // HP fill with gradient
     if (hpFrac > 0) {
         const hpGrad = ctx.createLinearGradient(hpX, hpY, hpX + hpW * hpFrac, hpY);
         if (isMe) {
@@ -1178,14 +1396,11 @@ function drawPlayer(index) {
         ctx.beginPath();
         ctx.roundRect(hpX, hpY, hpW * hpFrac, hpH, hpBorderR);
         ctx.fill();
-        // Sheen
-        ctx.fillStyle = "rgba(255,255,255,0.2)";
-        ctx.fillRect(hpX, hpY, hpW * hpFrac, hpH * 0.4);
     }
 }
 
 // ============================================
-// RENDERING — Bullets (colorful with trails)
+// RENDERING — Bullets
 // ============================================
 function drawBullets() {
     for (const b of bullets) {
@@ -1193,7 +1408,6 @@ function drawBullets() {
         const r = CFG.BULLET_RADIUS * scaleX;
         const isMyBullet = b.owner === myIndex;
 
-        // Trail particles
         if (Math.random() < 0.4) {
             const color = isMyBullet ? "#ff8800" : "#4488ff";
             spawnParticle(b.x + (Math.random() - 0.5) * 4, b.y + (Math.random() - 0.5) * 4,
@@ -1201,11 +1415,9 @@ function drawBullets() {
                 0.15 + Math.random() * 0.1, color, 1.5 + Math.random() * 1.5);
         }
 
-        // Glow
         ctx.shadowColor = isMyBullet ? "#ff8800" : "#4488ff";
         ctx.shadowBlur = 12;
 
-        // Bright bullet
         const bulGrad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, r * 1.5);
         if (isMyBullet) {
             bulGrad.addColorStop(0, "#fff");
@@ -1225,7 +1437,7 @@ function drawBullets() {
 }
 
 // ============================================
-// RENDERING — Dash trails (rainbow)
+// RENDERING — Dash trails
 // ============================================
 function drawDashTrails(dt) {
     for (let i = dashTrail.length - 1; i >= 0; i--) {
@@ -1239,7 +1451,6 @@ function drawDashTrails(dt) {
         const r = CFG.PLAYER_RADIUS * scaleX;
         ctx.globalAlpha = trail.alpha * 0.5;
 
-        // Rainbow colored ghost
         if (trail.color) {
             ctx.fillStyle = trail.color;
             ctx.beginPath();
@@ -1272,17 +1483,41 @@ function drawAimLine() {
     ctx.setLineDash([]);
 }
 
+// ============================================
+// HUD UPDATE
+// ============================================
 function updateHUD() {
     const me = players[myIndex];
-    const opp = players[1 - myIndex];
 
-    const myHpPct = Math.max(0, me.hp / CFG.PLAYER_HP * 100);
-    const oppHpPct = Math.max(0, opp.hp / CFG.PLAYER_HP * 100);
-    document.getElementById("hp-bar-self").style.width = myHpPct + "%";
-    document.getElementById("hp-bar-enemy").style.width = oppHpPct + "%";
-    document.getElementById("hp-text-self").textContent = Math.max(0, Math.round(me.hp));
-    document.getElementById("hp-text-enemy").textContent = Math.max(0, Math.round(opp.hp));
+    // Score display
+    const scoreEl = document.getElementById("score-display");
+    if (scoreEl) scoreEl.textContent = `${score[0]}  -  ${score[1]}`;
 
+    // Timer
+    const timerEl = document.getElementById("match-timer");
+    if (timerEl) timerEl.textContent = formatTime(matchTimer);
+
+    // Overtime indicator
+    const otEl = document.getElementById("overtime-indicator");
+    if (otEl) {
+        if (overtime) {
+            otEl.classList.remove("hidden");
+        } else {
+            otEl.classList.add("hidden");
+        }
+    }
+
+    // Ball indicator
+    const ballEl = document.getElementById("ball-indicator");
+    if (ballEl) {
+        if (me.hasBall) {
+            ballEl.classList.remove("hidden");
+        } else {
+            ballEl.classList.add("hidden");
+        }
+    }
+
+    // Dash indicator
     const dashEl = document.getElementById("dash-indicator");
     if (me.dashCooldown > 0) {
         dashEl.textContent = `DASH ${(me.dashCooldown / 1000).toFixed(1)}s`;
@@ -1292,13 +1527,10 @@ function updateHUD() {
         dashEl.classList.remove("on-cooldown");
     }
 
-    const puEl = document.getElementById("powerup-indicator");
-    if (me.powerup) {
-        const labels = { speed: "SPEED BOOST", rapid: "RAPID FIRE" };
-        puEl.textContent = labels[me.powerup] || me.powerup.toUpperCase();
-        puEl.classList.remove("hidden");
-    } else {
-        puEl.classList.add("hidden");
+    // Mobile fire button label
+    if (isMobile) {
+        const fb = document.getElementById("btn-mobile-fire");
+        if (fb) fb.textContent = me.hasBall ? "KICK" : "FIRE";
     }
 }
 
@@ -1338,6 +1570,9 @@ function gameLoop(timestamp) {
             if (hitFlash[i] > 0) hitFlash[i] -= dt;
         }
 
+        // Goal flash decay
+        if (goalFlash > 0) goalFlash -= dt * 2;
+
         updateParticles(dt);
         updateAimAngle();
         updateHUD();
@@ -1351,16 +1586,25 @@ function render(dt) {
 
     if (gameState === "playing" || gameState === "gameover") {
         drawArena();
-        drawPowerups();
+        drawGoals();
         drawDashTrails(dt);
 
         // Draw players (remote first, local on top)
         drawPlayer(1 - myIndex);
         drawPlayer(myIndex);
 
+        drawBall();
         drawBullets();
         drawParticles();
         drawAimLine();
+
+        // Goal flash overlay
+        if (goalFlash > 0) {
+            ctx.globalAlpha = goalFlash * 0.3;
+            ctx.fillStyle = "#ffd700";
+            ctx.fillRect(0, 0, W, H);
+            ctx.globalAlpha = 1;
+        }
     }
 }
 

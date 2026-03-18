@@ -1,5 +1,5 @@
 /* ============================================
-   K vs K — Brawl Stars Style
+   K vs K — Brawl Ball Style
    ============================================ */
 
 * {
@@ -342,7 +342,7 @@ body {
 .error-display.hidden { display: none; }
 
 /* ============================================
-   HUD
+   HUD — Brawl Ball
    ============================================ */
 
 #hud {
@@ -364,6 +364,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 100px;
 }
 
 .hud-right { align-items: flex-end; }
@@ -372,73 +373,75 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
 }
 
-.hp-bar-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.hp-label {
+/* Score Display */
+.score-display {
     font-family: 'Orbitron', monospace;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.7);
-    letter-spacing: 1px;
-    min-width: 50px;
-    text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
-}
-
-.hp-bar-bg {
-    width: 160px;
-    height: 16px;
-    background: rgba(0, 0, 0, 0.5);
-    border-radius: 8px;
-    overflow: hidden;
-    border: 2px solid rgba(255, 255, 255, 0.15);
-}
-
-.hp-bar {
-    width: 100%;
-    height: 100%;
-    border-radius: 6px;
-    transition: width 0.15s;
-}
-
-.hp-bar.self {
-    background: linear-gradient(90deg, #00cc44, #44ff88, #00cc44);
-    box-shadow: 0 0 10px rgba(0, 255, 136, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
-.hp-bar.enemy {
-    background: linear-gradient(90deg, #cc0022, #ff4466, #cc0022);
-    box-shadow: 0 0 10px rgba(255, 0, 68, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
-.hp-text {
-    font-family: 'Orbitron', monospace;
-    font-size: 13px;
-    font-weight: 700;
-    color: #fff;
-    min-width: 30px;
-    text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
-}
-
-.powerup-indicator {
-    font-family: 'Orbitron', monospace;
-    font-size: 12px;
+    font-size: 48px;
+    font-weight: 900;
     color: #ffd700;
-    letter-spacing: 1px;
-    padding: 4px 14px;
-    background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 150, 0, 0.15));
-    border: 1px solid rgba(255, 215, 0, 0.4);
-    border-radius: 8px;
-    text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+    letter-spacing: 6px;
+    text-shadow:
+        0 0 20px rgba(255, 215, 0, 0.6),
+        0 0 40px rgba(255, 150, 0, 0.4),
+        0 3px 6px rgba(0, 0, 0, 0.8);
+    line-height: 1;
 }
 
-.powerup-indicator.hidden { display: none; }
+/* Match Timer */
+.match-timer {
+    font-family: 'Orbitron', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3), 0 2px 4px rgba(0, 0, 0, 0.6);
+}
 
+/* Overtime Indicator */
+.overtime-indicator {
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    font-weight: 900;
+    color: #ff4444;
+    letter-spacing: 3px;
+    text-shadow: 0 0 15px rgba(255, 68, 68, 0.8), 0 0 30px rgba(255, 0, 0, 0.5);
+    animation: overtimePulse 0.8s ease-in-out infinite;
+}
+
+.overtime-indicator.hidden { display: none; }
+
+@keyframes overtimePulse {
+    0%, 100% { opacity: 0.7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.08); text-shadow: 0 0 25px rgba(255, 68, 68, 1), 0 0 50px rgba(255, 0, 0, 0.7); }
+}
+
+/* Ball Indicator */
+.ball-indicator {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffd700;
+    letter-spacing: 2px;
+    padding: 4px 14px;
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 150, 0, 0.2));
+    border: 1px solid rgba(255, 215, 0, 0.5);
+    border-radius: 8px;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+    animation: ballPulse 1s ease-in-out infinite;
+    margin-top: 4px;
+}
+
+.ball-indicator.hidden { display: none; }
+
+@keyframes ballPulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; box-shadow: 0 0 15px rgba(255, 215, 0, 0.4); }
+}
+
+/* Dash Indicator */
 .dash-indicator {
     font-family: 'Orbitron', monospace;
     font-size: 12px;
@@ -641,9 +644,10 @@ body {
     .game-title { font-size: 42px; }
     .menu-btn { min-width: 220px; font-size: 13px; padding: 12px 28px; }
     .menu-btn.big-btn { font-size: 17px; min-width: 260px; padding: 16px 40px; }
-    .hp-bar-bg { width: 110px; height: 14px; }
     .room-code-display { font-size: 36px; }
     .hero-section { max-width: 100%; }
+    .score-display { font-size: 36px; }
+    .match-timer { font-size: 18px; }
 }
 
 @media (max-width: 400px) {
@@ -651,4 +655,5 @@ body {
     .subtitle { font-size: 10px; letter-spacing: 3px; }
     .menu-btn.big-btn { font-size: 15px; min-width: 220px; }
     .menu-section { padding: 16px 12px 20px; }
+    .score-display { font-size: 28px; }
 }
