@@ -631,6 +631,16 @@ function connectSocket() {
         }
     });
 
+    socket.on("ball_tackled", (data) => {
+        SFX.hit();
+        spawnExplosion(players[data.from].x, players[data.from].y, "#ff8800", 16);
+        if (data.tackler === myIndex) {
+            notify("TACKLE!", "dash");
+        } else {
+            notify("TACKLED!", "hit");
+        }
+    });
+
     socket.on("goal_scored", (data) => {
         SFX.goal();
         score = data.score;

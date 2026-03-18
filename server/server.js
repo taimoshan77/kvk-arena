@@ -46,6 +46,7 @@ const CFG = {
     MATCH_DURATION: 120000,    // 2 minutes
     OVERTIME_DURATION: 60000,  // 1 minute
     RESPAWN_TIME: 3000,        // 3 seconds
+    TACKLE_RADIUS: 40,         // dash tackle range
 };
 
 // ============================================
@@ -613,6 +614,27 @@ io.on("connection", (socket) => {
         // Notify dash
         for (const pl of room.players) {
             if (pl) pl.socket.emit("player_dash", { player: p.index, x: p.x, y: p.y });
+        }
+
+        // Dash tackle — knock ball loose from carrier if close enough
+        const opponent = room.players[1 - p.index];
+        if (opponent && opponent.alive && ball.carrier === opponent.index) {
+            const tdx = p.x - opponent.x;
+            const tdy = p.y - opponent.y;
+            if (tdx * tdx + tdy * tdy < CFG.TACKLE_RADIUS * CFG.TACKLE_RADIUS) {
+                // Knock ball away from tackler
+                const knockAngle = Math.atan2(tdy, tdx);
+                ball.vx = Math.cos(knockAngle) * CFG.BALL_DROP_SPEED * 2;
+                ball.vy = Math.sin(knockAngle) * CFG.BALL_DROP_SPEED * 2;
+                ball.carrier = -1;
+                ball.x = opponent.x;
+                ball.y = opponent.y;
+                opponent.hasBall = false;
+                for (const pl of room.players) {
+                    if (pl) pl.socket.emit("ball_tackled", { tackler: p.index, from: opponent.index });
+                }
+                console.log(`Room ${room.code}: Player ${p.index + 1} tackled Player ${opponent.index + 1}`);
+            }
         }
     });
 
