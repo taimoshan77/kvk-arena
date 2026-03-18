@@ -293,6 +293,23 @@ body {
     50% { box-shadow: 0 4px 30px rgba(255, 200, 0, 0.7), 0 0 40px rgba(255, 200, 0, 0.3); }
 }
 
+.difficulty-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+.difficulty-row.hidden {
+    display: none;
+}
+
+.diff-btn {
+    font-size: 13px;
+    padding: 8px 16px;
+    min-width: 0;
+    flex: 1;
+}
+
 .join-row {
     display: flex;
     gap: 10px;

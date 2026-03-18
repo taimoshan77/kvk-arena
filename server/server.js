@@ -318,6 +318,13 @@ function endMatch(room, winner) {
 // ============================================
 // BOT AI
 // ============================================
+// Difficulty settings: 1=easy, 2=normal, 3=hard
+const BOT_DIFFICULTY = {
+    1: { speedMult: 0.45, fireCooldownMult: 3.0, shootRange: 200, dashChance: 0.3, superKickChance: 0.005, kickDist: 180 },
+    2: { speedMult: 0.7,  fireCooldownMult: 1.8, shootRange: 280, dashChance: 0.6, superKickChance: 0.01,  kickDist: 220 },
+    3: { speedMult: 1.0,  fireCooldownMult: 1.0, shootRange: 350, dashChance: 1.0, superKickChance: 0.02,  kickDist: 250 },
+};
+
 function tickBotAI(room) {
     const bot = room.players[1];
     const opponent = room.players[0];
@@ -325,6 +332,8 @@ function tickBotAI(room) {
 
     const ball = room.ball;
     const now = Date.now();
+    const diff = BOT_DIFFICULTY[room.botDifficulty] || BOT_DIFFICULTY[3];
+    const botSpeed = CFG.PLAYER_SPEED * diff.speedMult;
 
     // Target position for movement
     let targetX, targetY;
@@ -337,7 +346,7 @@ function tickBotAI(room) {
 
         // Kick toward goal when close enough or well-aligned
         const distToGoal = bot.x - 0;
-        if (distToGoal < 250) {
+        if (distToGoal < diff.kickDist) {
             // Kick toward goal center
             const goalY = goalCenter + (Math.random() - 0.5) * CFG.GOAL_WIDTH * 0.6;
             const angle = Math.atan2(goalY - bot.y, 0 - bot.x);
@@ -355,7 +364,7 @@ function tickBotAI(room) {
 
         // Super kick if very aligned with goal
         if (distToGoal < 400 && Math.abs(bot.y - goalCenter) < CFG.GOAL_WIDTH * 0.4) {
-            if (Math.random() < 0.02) { // occasional super kick
+            if (Math.random() < diff.superKickChance) {
                 const angle = Math.atan2(goalCenter - bot.y, 0 - bot.x);
                 ball.vx = Math.cos(angle) * CFG.BALL_SUPER_KICK_SPEED;
                 ball.vy = Math.sin(angle) * CFG.BALL_SUPER_KICK_SPEED;
@@ -378,17 +387,19 @@ function tickBotAI(room) {
         targetX = opponent.x;
         targetY = opponent.y;
 
-        // Dash tackle if close and off cooldown
+        // Dash tackle if close and off cooldown (gated by dashChance)
         const dx = opponent.x - bot.x;
         const dy = opponent.y - bot.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < CFG.DASH_DISTANCE + CFG.TACKLE_RADIUS && dist > 0 && now - bot.lastDashTime >= CFG.DASH_COOLDOWN) {
+        if (dist < CFG.DASH_DISTANCE + CFG.TACKLE_RADIUS && dist > 0
+            && now - bot.lastDashTime >= CFG.DASH_COOLDOWN
+            && Math.random() < diff.dashChance) {
             bot.lastDashTime = now;
             const nx = dx / dist;
             const ny = dy / dist;
             // Set velocity toward opponent for the dash
-            bot.vx = nx * CFG.PLAYER_SPEED;
-            bot.vy = ny * CFG.PLAYER_SPEED;
+            bot.vx = nx * botSpeed;
+            bot.vy = ny * botSpeed;
             const startX = bot.x;
             const startY = bot.y;
             bot.x += nx * CFG.DASH_DISTANCE;
@@ -441,8 +452,8 @@ function tickBotAI(room) {
         const dy = targetY - bot.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > 5) {
-            bot.vx = (dx / dist) * CFG.PLAYER_SPEED;
-            bot.vy = (dy / dist) * CFG.PLAYER_SPEED;
+            bot.vx = (dx / dist) * botSpeed;
+            bot.vy = (dy / dist) * botSpeed;
         } else {
             bot.vx = 0;
             bot.vy = 0;
@@ -450,11 +461,12 @@ function tickBotAI(room) {
     }
 
     // Shoot at opponent periodically (when not carrying ball)
-    if (!bot.hasBall && opponent.alive && now - bot.lastFireTime >= CFG.FIRE_COOLDOWN) {
+    const fireCooldown = CFG.FIRE_COOLDOWN * diff.fireCooldownMult;
+    if (!bot.hasBall && opponent.alive && now - bot.lastFireTime >= fireCooldown) {
         const dx = opponent.x - bot.x;
         const dy = opponent.y - bot.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 350) {
+        if (dist < diff.shootRange) {
             bot.lastFireTime = now;
             const angle = Math.atan2(dy, dx);
             let bulletSpeed = CFG.BULLET_SPEED;
@@ -980,10 +992,11 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("start_solo", () => {
+    socket.on("start_solo", (data) => {
         const botSocket = createBotSocket();
         const room = createRoom(socket, botSocket);
         room.isBot = true;
+        room.botDifficulty = (data && data.difficulty >= 1 && data.difficulty <= 3) ? data.difficulty : 2;
     });
 
     socket.on("cancel_queue", () => {

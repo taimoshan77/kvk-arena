@@ -1942,8 +1942,18 @@ document.getElementById("btn-quick").addEventListener("click", () => {
 
 document.getElementById("btn-solo").addEventListener("click", () => {
     SFX.click();
-    connectSocket();
-    socket.emit("start_solo");
+    const diffRow = document.getElementById("difficulty-select");
+    diffRow.classList.toggle("hidden");
+});
+
+document.querySelectorAll(".diff-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+        SFX.click();
+        const difficulty = parseInt(btn.dataset.diff);
+        document.getElementById("difficulty-select").classList.add("hidden");
+        connectSocket();
+        socket.emit("start_solo", { difficulty });
+    });
 });
 
 document.getElementById("btn-cancel").addEventListener("click", () => {
