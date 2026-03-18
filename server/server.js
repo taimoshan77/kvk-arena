@@ -46,7 +46,8 @@ const CFG = {
     MATCH_DURATION: 120000,    // 2 minutes
     OVERTIME_DURATION: 60000,  // 1 minute
     RESPAWN_TIME: 3000,        // 3 seconds
-    TACKLE_RADIUS: 40,         // dash tackle range
+    TACKLE_RADIUS: 50,         // dash tackle range
+    KICK_PICKUP_GRACE: 300,    // ms before kicker can re-pick up ball
 };
 
 // ============================================
@@ -76,7 +77,7 @@ function createRoom(p1Socket, p2Socket) {
         tickInterval: null,
         lastTick: Date.now(),
         // Brawl Ball state
-        ball: { x: CFG.ARENA_W / 2, y: CFG.ARENA_H / 2, vx: 0, vy: 0, carrier: -1, lastKicker: -1 },
+        ball: { x: CFG.ARENA_W / 2, y: CFG.ARENA_H / 2, vx: 0, vy: 0, carrier: -1, lastKicker: -1, lastKickTime: 0 },
         score: [0, 0],
         matchTimer: CFG.MATCH_DURATION,
         overtime: false,
@@ -143,7 +144,7 @@ function resetPositions(room) {
         p.hasBall = false;
         p.respawnTimer = 0;
     }
-    room.ball = { x: CFG.ARENA_W / 2, y: CFG.ARENA_H / 2, vx: 0, vy: 0, carrier: -1, lastKicker: -1 };
+    room.ball = { x: CFG.ARENA_W / 2, y: CFG.ARENA_H / 2, vx: 0, vy: 0, carrier: -1, lastKicker: -1, lastKickTime: 0 };
     room.bullets = [];
 }
 
@@ -319,10 +320,13 @@ function tickRoom(room) {
         // --- Ball pickup ---
         for (const p of room.players) {
             if (!p.alive) continue;
+            // Grace period: kicker can't immediately re-pick up
+            if (p.index === ball.lastKicker && (now - ball.lastKickTime) < CFG.KICK_PICKUP_GRACE) continue;
             const dx = ball.x - p.x;
             const dy = ball.y - p.y;
             if (dx * dx + dy * dy < CFG.BALL_PICKUP_RADIUS * CFG.BALL_PICKUP_RADIUS) {
                 ball.carrier = p.index;
+                ball.lastKicker = -1; // reset so future pickups work
                 p.hasBall = true;
                 ball.vx = 0;
                 ball.vy = 0;
@@ -448,7 +452,7 @@ io.on("connection", (socket) => {
             state: "waiting",
             tickInterval: null,
             lastTick: Date.now(),
-            ball: { x: CFG.ARENA_W / 2, y: CFG.ARENA_H / 2, vx: 0, vy: 0, carrier: -1, lastKicker: -1 },
+            ball: { x: CFG.ARENA_W / 2, y: CFG.ARENA_H / 2, vx: 0, vy: 0, carrier: -1, lastKicker: -1, lastKickTime: 0 },
             score: [0, 0],
             matchTimer: CFG.MATCH_DURATION,
             overtime: false,
@@ -540,6 +544,7 @@ io.on("connection", (socket) => {
             ball.vy = Math.sin(angle) * CFG.BALL_KICK_SPEED;
             ball.carrier = -1;
             ball.lastKicker = p.index;
+            ball.lastKickTime = Date.now();
             p.hasBall = false;
             for (const pl of room.players) {
                 if (pl) pl.socket.emit("ball_kicked", { player: p.index, angle });
@@ -588,6 +593,7 @@ io.on("connection", (socket) => {
             ball.vy = Math.sin(angle) * CFG.BALL_SUPER_KICK_SPEED;
             ball.carrier = -1;
             ball.lastKicker = p.index;
+            ball.lastKickTime = Date.now();
             p.hasBall = false;
             for (const pl of room.players) {
                 if (pl) pl.socket.emit("ball_super_kicked", { player: p.index, angle });
@@ -616,17 +622,31 @@ io.on("connection", (socket) => {
             if (pl) pl.socket.emit("player_dash", { player: p.index, x: p.x, y: p.y });
         }
 
-        // Dash tackle — knock ball loose from carrier if close enough
+        // Dash tackle — check along entire dash path for collision with carrier
         const opponent = room.players[1 - p.index];
-        if (opponent && opponent.alive && ball.carrier === opponent.index) {
-            const tdx = p.x - opponent.x;
-            const tdy = p.y - opponent.y;
-            if (tdx * tdx + tdy * tdy < CFG.TACKLE_RADIUS * CFG.TACKLE_RADIUS) {
-                // Knock ball away from tackler
-                const knockAngle = Math.atan2(tdy, tdx);
+        if (opponent && opponent.alive && ball.carrier === opponent.index && mag > 0) {
+            // Check if dash line segment passes within tackle range of opponent
+            // Line segment from (startX, startY) to (p.x, p.y)
+            const startX = p.x - (p.vx / mag) * CFG.DASH_DISTANCE;
+            const startY = p.y - (p.vy / mag) * CFG.DASH_DISTANCE;
+            const segDx = p.x - startX;
+            const segDy = p.y - startY;
+            const segLen2 = segDx * segDx + segDy * segDy;
+            // Project opponent onto line segment
+            const t = clamp(((opponent.x - startX) * segDx + (opponent.y - startY) * segDy) / segLen2, 0, 1);
+            const closestX = startX + t * segDx;
+            const closestY = startY + t * segDy;
+            const distX = opponent.x - closestX;
+            const distY = opponent.y - closestY;
+            const dist2 = distX * distX + distY * distY;
+            if (dist2 < CFG.TACKLE_RADIUS * CFG.TACKLE_RADIUS) {
+                // Knock ball away from tackler direction
+                const knockAngle = Math.atan2(p.vy, p.vx);
                 ball.vx = Math.cos(knockAngle) * CFG.BALL_DROP_SPEED * 2;
                 ball.vy = Math.sin(knockAngle) * CFG.BALL_DROP_SPEED * 2;
                 ball.carrier = -1;
+                ball.lastKicker = -1;
+                ball.lastKickTime = 0;
                 ball.x = opponent.x;
                 ball.y = opponent.y;
                 opponent.hasBall = false;
