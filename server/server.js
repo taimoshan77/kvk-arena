@@ -640,15 +640,20 @@ io.on("connection", (socket) => {
             const distY = opponent.y - closestY;
             const dist2 = distX * distX + distY * distY;
             if (dist2 < CFG.TACKLE_RADIUS * CFG.TACKLE_RADIUS) {
-                // Knock ball away from tackler direction
+                // Knock ball away in tackle direction, offset from opponent
                 const knockAngle = Math.atan2(p.vy, p.vx);
-                ball.vx = Math.cos(knockAngle) * CFG.BALL_DROP_SPEED * 2;
-                ball.vy = Math.sin(knockAngle) * CFG.BALL_DROP_SPEED * 2;
+                const knockSpeed = CFG.BALL_KICK_SPEED * 0.6;
+                ball.vx = Math.cos(knockAngle) * knockSpeed;
+                ball.vy = Math.sin(knockAngle) * knockSpeed;
                 ball.carrier = -1;
-                ball.lastKicker = -1;
-                ball.lastKickTime = 0;
-                ball.x = opponent.x;
-                ball.y = opponent.y;
+                // Grace period prevents tackled player from re-grabbing
+                ball.lastKicker = opponent.index;
+                ball.lastKickTime = Date.now();
+                // Offset ball ahead so it's not on top of the opponent
+                ball.x = opponent.x + Math.cos(knockAngle) * 40;
+                ball.y = opponent.y + Math.sin(knockAngle) * 40;
+                ball.x = clamp(ball.x, CFG.BALL_RADIUS, CFG.ARENA_W - CFG.BALL_RADIUS);
+                ball.y = clamp(ball.y, CFG.BALL_RADIUS, CFG.ARENA_H - CFG.BALL_RADIUS);
                 opponent.hasBall = false;
                 for (const pl of room.players) {
                     if (pl) pl.socket.emit("ball_tackled", { tackler: p.index, from: opponent.index });
